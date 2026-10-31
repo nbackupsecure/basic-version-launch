@@ -1,0 +1,726 @@
+import React, { useState } from 'react';
+import {
+  Activity,
+  Menu,
+  X,
+  ShieldCheck,
+  Search,
+  ArrowRight,
+  PhoneCall,
+  Users,
+  Building2,
+  Stethoscope,
+  FlaskConical,
+  HeartPulse,
+  Syringe,
+  Pill,
+  Smile,
+  CheckCircle2,
+  ChevronRight,
+  User,
+  Phone,
+  MapPin,
+  Calendar,
+  Clock,
+  Sparkles,
+  Rocket,
+  Droplet,
+  Car,
+  Home,
+  HeartHandshake,
+  Scan
+} from 'lucide-react';
+
+export default function App() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('online-doctor');
+  const [lastWhatsAppUrl, setLastWhatsAppUrl] = useState<string>('');
+  const [bookingSubmitted, setBookingSubmitted] = useState(false);
+
+  const [bookingForm, setBookingForm] = useState({
+    fullName: '',
+    phone: '',
+    address: '',
+    pincode: '',
+    date: '',
+    timeSlot: 'Morning (08:00 AM - 12:00 PM)',
+    persons: '1',
+  });
+
+  const WHATSAPP_NUMBER = '919393934621';
+
+  // 16 Exact Services split from https://i.ibb.co/gbq7HnhV/Nhealth-Healthcare-Services-Grid-1.png
+  const services = [
+    { id: 'online-doctor', name: 'Online Doctor Consultations', img: '/services/service_0.png', col: 0, row: 0 },
+    { id: 'doctor-home-visits', name: 'Doctor Home Visits', img: '/services/service_1.png', col: 1, row: 0 },
+    { id: 'doorstep-pharmacy', name: 'Doorstep Pharmacy', img: '/services/service_2.png', col: 2, row: 0 },
+    { id: 'home-diagnostics', name: 'Home Diagnostics & Lab Tests', img: '/services/service_3.png', col: 3, row: 0 },
+    { id: 'xray-portable', name: 'X-ray and Portable Diagnostics at Home', img: '/services/service_4.png', col: 0, row: 1 },
+    { id: 'bedside-assistance', name: 'Bedside Assistance & Attendent', img: '/services/service_5.png', col: 1, row: 1 },
+    { id: 'eldercare', name: 'Eldercare & Senior Assistance', img: '/services/service_6.png', col: 2, row: 1 },
+    { id: 'specialized-nursing', name: 'Specialized Nursing Care at Home', img: '/services/service_7.png', col: 3, row: 1 },
+    { id: 'physiotherapy', name: 'Physiotherapy at Home', img: '/services/service_8.png', col: 0, row: 2 },
+    { id: 'dental-care', name: 'Dental Care & Oral Health', img: '/services/service_9.png', col: 1, row: 2 },
+    { id: 'opd-hospital-assistance', name: 'Prepaid Premium OPD & Hospital Assistance', img: '/services/service_10.png', col: 2, row: 2 },
+    { id: 'advance-imaging', name: 'Diagnostics & Advance Imaging', img: '/services/service_11.png', col: 3, row: 2 },
+    { id: 'blood-bank', name: 'Blood Bank & Support', img: '/services/service_12.png', col: 0, row: 3 },
+    { id: 'smart-ambulance', name: '24/7 Smart Ambulance & SOS', img: '/services/service_13.png', col: 1, row: 3 },
+    { id: 'careride', name: 'Nhealth Careride', img: '/services/service_14.png', col: 2, row: 3 },
+    { id: 'careassist', name: 'Nhealth Careassist', img: '/services/service_15.png', col: 3, row: 3 },
+  ];
+
+  const activeService = services.find((s) => s.id === selectedServiceId) || services[0];
+
+  // Select service and smoothly target booking form
+  const handleServiceSelect = (serviceId: string) => {
+    setSelectedServiceId(serviceId);
+    const formElement = document.getElementById('booking-form');
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  // WhatsApp formatted redirection with exact selected service and patient fields
+  const formatWhatsAppBookingUrl = () => {
+    const text =
+      `*New Healthcare Appointment - nhealth*\n` +
+      `--------------------------------\n` +
+      `• *Selected Service:* ${activeService.name}\n` +
+      `• *Patient Full Name:* ${bookingForm.fullName}\n` +
+      `• *Phone Number:* +91 ${bookingForm.phone}\n` +
+      `• *Patient Address:* ${bookingForm.address}\n` +
+      `• *Pincode:* ${bookingForm.pincode}\n` +
+      `• *Service Required Date:* ${bookingForm.date || 'Earliest Available'}\n` +
+      `• *Time Slot:* ${bookingForm.timeSlot}\n` +
+      `• *Number of Persons:* ${bookingForm.persons}\n` +
+      `--------------------------------\n` +
+      `_Sent via nhealth Unified Healthcare Network_`;
+    return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
+  };
+
+  const handleBookingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const waUrl = formatWhatsAppBookingUrl();
+    setLastWhatsAppUrl(waUrl);
+    setBookingSubmitted(true);
+    // Instant redirect to WhatsApp
+    window.location.href = waUrl;
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
+      {/* Top Banner */}
+      <div className="bg-blue-900 text-blue-100 text-xs sm:text-sm py-1.5 px-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>ABDM Aligned • 24/7 Unified Emergency & Healthcare Network Across Bharat</span>
+          </div>
+          <div className="hidden sm:flex items-center gap-4 text-xs">
+            <span className="flex items-center gap-1">
+              <PhoneCall className="w-3.5 h-3.5 text-blue-300" />
+              Direct Helpline: +91 9393934621
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Navbar */}
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-20">
+            {/* Header Brand Logo & Name */}
+            <a href="#" className="flex items-center gap-2.5 sm:gap-3 group focus:outline-none">
+              <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 overflow-hidden shadow-xs shrink-0">
+                <img
+                  src="https://i.ibb.co/DPnzhmNM/Nhealth-logo-8cm-x-8cm-high-quality-3.png"
+                  alt="nhealth Logo"
+                  className="w-full h-full object-contain p-0.5"
+                  style={{ height: '38px', width: 'auto' }}
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    if (target.src !== 'https://i.ibb.co/qLw7Khzg/Nhealth-logo-8cm-x-8cm-high-quality-3.png') {
+                      target.src = 'https://i.ibb.co/qLw7Khzg/Nhealth-logo-8cm-x-8cm-high-quality-3.png';
+                    } else {
+                      target.style.display = 'none';
+                      const fallback = document.getElementById('navbar-logo-svg');
+                      if (fallback) fallback.style.display = 'flex';
+                    }
+                  }}
+                />
+                <div
+                  id="navbar-logo-svg"
+                  style={{ display: 'none' }}
+                  className="w-full h-full bg-blue-600 text-white items-center justify-center font-bold text-lg"
+                >
+                  <Activity className="w-5 h-5 text-white" />
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xl sm:text-2xl font-black tracking-tight text-blue-950 font-sans flex items-center">
+                  nhealth<span className="text-blue-600">.</span>
+                </span>
+                <span className="text-[9px] sm:text-[10px] tracking-wider uppercase font-semibold text-slate-500 -mt-0.5 sm:-mt-1">
+                  Unified Healthcare Network
+                </span>
+              </div>
+            </a>
+
+            {/* Desktop Navigation Links */}
+            <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
+              <a href="#services" className="hover:text-blue-600 transition-colors">Services</a>
+              <a href="#booking-form" className="hover:text-blue-600 transition-colors">Book Appointment</a>
+            </nav>
+
+            {/* Desktop Action Buttons */}
+            <div className="hidden md:flex items-center gap-3">
+              <a
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello nhealth Team, I would like to inquire about healthcare services.')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <span>WhatsApp Desk</span>
+              </a>
+              <a
+                href="#booking-form"
+                className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-500/20 rounded-lg transition-all active:scale-[0.98]"
+              >
+                Book Now
+              </a>
+            </div>
+
+            {/* Mobile Hamburger Button */}
+            <div className="flex md:hidden">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-slate-100 focus:outline-none"
+                aria-label="Toggle navigation menu"
+              >
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Dropdown Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-b border-slate-200 bg-white px-4 pt-2 pb-6 space-y-3">
+            <nav className="flex flex-col space-y-2 text-base font-medium text-slate-700">
+              <a
+                href="#services"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600"
+              >
+                Services
+              </a>
+              <a
+                href="#booking-form"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600"
+              >
+                Book Appointment
+              </a>
+            </nav>
+            <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+              <a
+                href="#booking-form"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full py-2.5 text-center text-sm font-semibold text-white bg-blue-600 rounded-lg shadow-sm"
+              >
+                Book Now
+              </a>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* Hero Section */}
+      <section className="relative overflow-hidden bg-gradient-to-b from-blue-50/70 via-white to-slate-50 pt-2 pb-16 sm:pt-3 sm:pb-24 lg:pt-4 lg:pb-28">
+        <div
+          className="absolute inset-0 pointer-events-none opacity-30"
+          style={{
+            backgroundImage: `radial-gradient(#2563eb 0.75px, transparent 0.75px)`,
+            backgroundSize: '24px 24px'
+          }}
+        />
+
+        {/* Continuous Moving Scooty Animation (Between Header and Launch Announcement) */}
+        <div className="relative w-full overflow-hidden pt-1 pb-2.5 sm:pb-3.5 mb-2 select-none pointer-events-none">
+          <div className="absolute inset-x-0 bottom-2 sm:bottom-2.5 border-b border-dashed border-blue-200/80" />
+          <div className="scooty-mover inline-flex items-center">
+            <img
+              src="/scooty-cutout.png"
+              alt="nhealth Home Healthcare Caregiver on Scooty"
+              className="h-12 sm:h-16 md:h-20 w-auto object-contain drop-shadow-md"
+              loading="eager"
+            />
+          </div>
+        </div>
+
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center">
+            
+            {/* Left Column */}
+            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+              {/* Launch Announcement Alert */}
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-50/95 border border-blue-200/90 shadow-xs flex items-start sm:items-center gap-3.5 text-left">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/20">
+                  <Rocket className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 text-xs sm:text-sm text-slate-700 leading-relaxed font-normal">
+                  <span className="font-bold text-blue-950 block sm:inline sm:mr-1.5">Launch Announcement:</span>
+                  The fully automated nhealth application will be launching shortly. To ensure uninterrupted care in the meantime, we have introduced this initial version to serve you better.
+                </div>
+              </div>
+
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-100/80 border border-blue-200 text-blue-900 text-xs sm:text-sm font-semibold">
+                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span>Empowering 1.4 Billion Citizens with Seamless Care</span>
+              </div>
+
+              <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.15]">
+                Welcome to <span className="text-blue-600">Bharat's Biggest</span> Unified Healthcare Network
+              </h1>
+
+              <p className="text-base sm:text-lg text-slate-600 max-w-2xl mx-auto lg:mx-0 font-normal leading-relaxed">
+                Interconnecting hospitals, clinics, verified practitioners, diagnostic labs, and digital health records under one secure national infrastructure.
+              </p>
+
+              {/* Quick Search / CTA Box */}
+              <div className="pt-2 max-w-xl mx-auto lg:mx-0">
+                <div className="p-2 sm:p-2.5 bg-white rounded-2xl shadow-lg shadow-blue-950/5 border border-slate-200/80 flex flex-col sm:flex-row gap-2">
+                  <div className="flex-1 flex items-center px-3 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                    <Search className="w-5 h-5 text-slate-400 mr-2 shrink-0" />
+                    <input
+                      type="text"
+                      placeholder="Find verified doctors, hospitals, or diagnostic labs..."
+                      className="w-full bg-transparent text-sm text-slate-800 placeholder-slate-400 focus:outline-none"
+                    />
+                  </div>
+                  <a
+                    href="#services"
+                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm"
+                  >
+                    <span>Explore Services</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Metrics */}
+              <div className="pt-4 grid grid-cols-3 gap-4 border-t border-slate-200/80 max-w-lg mx-auto lg:mx-0">
+                <div>
+                  <div className="text-xl sm:text-2xl font-bold text-slate-900">75,000+</div>
+                  <div className="text-xs text-slate-500 font-medium">Unified Clinics & Labs</div>
+                </div>
+                <div>
+                  <div className="text-xl sm:text-2xl font-bold text-blue-600">120K+</div>
+                  <div className="text-xs text-slate-500 font-medium">Registered Doctors</div>
+                </div>
+                <div>
+                  <div className="text-xl sm:text-2xl font-bold text-slate-900">28 States</div>
+                  <div className="text-xs text-slate-500 font-medium">Nationwide Coverage</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Embedded Image Display */}
+            <div className="lg:col-span-5 relative flex items-center justify-center">
+              <div className="w-full max-w-lg mx-auto p-3 sm:p-4 bg-white rounded-3xl shadow-xl shadow-blue-900/10 border border-slate-200/80 transition-all duration-300 hover:shadow-2xl hover:shadow-blue-900/15">
+                <img
+                  src="https://i.ibb.co/DPnzhmNM/Nhealth-logo-8cm-x-8cm-high-quality-3.png"
+                  alt="nhealth Unified Healthcare Network"
+                  className="w-full h-auto max-h-[460px] object-contain rounded-2xl mx-auto block"
+                  loading="eager"
+                  onError={(e) => {
+                    const target = e.currentTarget as HTMLImageElement;
+                    if (target.src !== 'https://i.ibb.co/qLw7Khzg/Nhealth-logo-8cm-x-8cm-high-quality-3.png') {
+                      target.src = 'https://i.ibb.co/qLw7Khzg/Nhealth-logo-8cm-x-8cm-high-quality-3.png';
+                    } else {
+                      target.style.display = 'none';
+                      const fallback = document.getElementById('hero-display-fallback');
+                      if (fallback) fallback.style.display = 'flex';
+                    }
+                  }}
+                />
+                <div
+                  id="hero-display-fallback"
+                  style={{ display: 'none' }}
+                  className="w-full min-h-[300px] rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100/70 border border-blue-200/60 p-8 flex flex-col items-center justify-center text-center gap-3"
+                >
+                  <div className="w-16 h-16 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
+                    <ShieldCheck className="w-8 h-8" />
+                  </div>
+                  <h3 className="font-extrabold text-blue-950 text-lg">nhealth Unified Network</h3>
+                  <p className="text-xs text-slate-600 max-w-xs leading-relaxed">
+                    Connecting verified doctors, diagnostic laboratories, hospitals, and citizens across Bharat.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* Services Section: Strict 4x4 Grid Format */}
+      <section id="services" className="py-16 sm:py-20 bg-white border-t border-slate-200/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          <div className="text-center max-w-2xl mx-auto mb-10">
+            <div className="inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-blue-600 bg-blue-50 px-3.5 py-1.5 rounded-full mb-3 border border-blue-100">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Healthcare Services Grid</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900 tracking-tight">
+              Select Your Required Service
+            </h2>
+            <p className="mt-2 text-sm sm:text-base text-slate-600">
+              Click any of the 16 unified healthcare services below to instantly select and book.
+            </p>
+          </div>
+
+          {/* Responsive Grid: 3 columns on Mobile, 4 columns on Tablet & Desktop */}
+          <div className="grid grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4 lg:gap-5">
+            {services.map((service) => {
+              const isSelected = selectedServiceId === service.id;
+
+              return (
+                <button
+                  key={service.id}
+                  type="button"
+                  onClick={() => handleServiceSelect(service.id)}
+                  aria-pressed={isSelected}
+                  className={`group relative text-left w-full rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 focus:outline-none ${
+                    isSelected
+                      ? 'ring-2 sm:ring-4 ring-blue-600 shadow-xl shadow-blue-500/25 scale-[1.02]'
+                      : 'border border-slate-200/80 hover:border-blue-400 hover:shadow-lg hover:shadow-slate-300/60 hover:-translate-y-1'
+                  }`}
+                >
+                  <img
+                    src={service.img}
+                    alt={service.name}
+                    className="w-full h-auto block rounded-xl sm:rounded-2xl object-contain bg-white"
+                    loading="lazy"
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      target.style.display = 'none';
+                      const parent = target.parentElement;
+                      if (parent) {
+                        const fallback = parent.querySelector('.sprite-fallback') as HTMLElement;
+                        if (fallback) fallback.style.display = 'block';
+                      }
+                    }}
+                  />
+                  <div
+                    className="sprite-fallback hidden w-full aspect-[384/256] rounded-xl sm:rounded-2xl bg-slate-100"
+                    style={{
+                      backgroundImage: `url('https://i.ibb.co/gbq7HnhV/Nhealth-Healthcare-Services-Grid-1.png')`,
+                      backgroundSize: '400% 400%',
+                      backgroundPosition: `${(service.col / 3) * 100}% ${(service.row / 3) * 100}%`,
+                      backgroundRepeat: 'no-repeat'
+                    }}
+                  />
+
+                  {/* Active Selected State Badge */}
+                  {isSelected && (
+                    <div className="absolute top-1.5 right-1.5 sm:top-2.5 sm:right-2.5 bg-blue-600 text-white text-[9px] sm:text-[11px] font-bold px-2 py-0.5 sm:px-3 sm:py-1 rounded-full shadow-lg flex items-center gap-1 backdrop-blur-xs">
+                      <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span>Selected</span>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+        </div>
+      </section>
+
+      {/* Patient Booking Form Section */}
+      <section id="booking-form" className="py-16 sm:py-20 bg-slate-50 border-t border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-blue-600 bg-blue-100/60 px-3 py-1 rounded-full mb-2">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Priority Appointment Slot</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Patient Booking & Consultation
+            </h2>
+            <p className="mt-1 text-sm text-slate-600 max-w-xl mx-auto">
+              Selected Service: <span className="font-semibold text-blue-700">{activeService.name}</span>. Complete the form to dispatch your details directly via WhatsApp.
+            </p>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-xl shadow-blue-900/5 p-6 sm:p-8 md:p-10">
+            {bookingSubmitted ? (
+              <div className="text-center py-8 space-y-4">
+                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+                  <CheckCircle2 className="w-10 h-10" />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">Appointment Request Prepared!</h3>
+                <p className="text-sm text-slate-600 max-w-md mx-auto">
+                  Thank you, <span className="font-semibold text-slate-900">{bookingForm.fullName}</span>. Your details for <span className="font-semibold text-blue-700">{activeService.name}</span> on <span className="font-semibold text-slate-900">{bookingForm.date || 'Earliest slot'}</span> have been formatted.
+                </p>
+                <div className="inline-block bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-xs text-emerald-800 font-medium">
+                  Dispatching to Official WhatsApp: <span className="font-mono font-bold">+91 9393934621</span>
+                </div>
+                <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+                  {lastWhatsAppUrl && (
+                    <a
+                      href={lastWhatsAppUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#25D366] hover:bg-[#20ba59] text-white text-xs sm:text-sm font-semibold rounded-xl shadow-md transition-all active:scale-[0.98]"
+                    >
+                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                      </svg>
+                      <span>Open WhatsApp Now</span>
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBookingSubmitted(false);
+                      setBookingForm({
+                        fullName: '',
+                        phone: '',
+                        address: '',
+                        pincode: '',
+                        date: '',
+                        timeSlot: 'Morning (08:00 AM - 12:00 PM)',
+                        persons: '1',
+                      });
+                    }}
+                    className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-semibold rounded-xl transition-all cursor-pointer"
+                  >
+                    Book Another Service
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                onSubmit={handleBookingSubmit}
+                className="space-y-5"
+              >
+                {/* Active service indicator */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-blue-50/70 border border-blue-100 text-xs text-blue-900 font-medium">
+                  <span className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                    Selected Service: <strong className="text-blue-950 font-bold">{activeService.name}</strong>
+                  </span>
+                  <a href="#services" className="text-blue-600 hover:underline font-semibold">Change Service</a>
+                </div>
+
+                {/* 1. Full Name & 2. Phone Number */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Full Name <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        value={bookingForm.fullName}
+                        onChange={(e) => setBookingForm({ ...bookingForm, fullName: e.target.value })}
+                        placeholder="e.g. Ramesh Kumar"
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 placeholder-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Phone Number <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-medium text-slate-500 border-r border-slate-200 pr-2">
+                        <Phone className="w-3.5 h-3.5 text-slate-400" />
+                        <span>+91</span>
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        pattern="[0-9]{10}"
+                        maxLength={10}
+                        value={bookingForm.phone}
+                        onChange={(e) => setBookingForm({ ...bookingForm, phone: e.target.value.replace(/\D/g, '') })}
+                        placeholder="9876543210"
+                        className="w-full pl-20 pr-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 placeholder-slate-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Address & 4. Pincode */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                  <div className="sm:col-span-8">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Address & Landmark <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        required
+                        value={bookingForm.address}
+                        onChange={(e) => setBookingForm({ ...bookingForm, address: e.target.value })}
+                        placeholder="House / Flat No., Colony or Street"
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 placeholder-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Pincode <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={6}
+                      pattern="[0-9]{6}"
+                      value={bookingForm.pincode}
+                      onChange={(e) => setBookingForm({ ...bookingForm, pincode: e.target.value.replace(/\D/g, '') })}
+                      placeholder="e.g. 110001"
+                      className="w-full px-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 placeholder-slate-400"
+                    />
+                  </div>
+                </div>
+
+                {/* 5. Service Required Date, 6. Time Slot & 7. Number of Persons */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Service Required Date <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="date"
+                        required
+                        value={bookingForm.date}
+                        onChange={(e) => setBookingForm({ ...bookingForm, date: e.target.value })}
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Time Slot <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <select
+                        value={bookingForm.timeSlot}
+                        onChange={(e) => setBookingForm({ ...bookingForm, timeSlot: e.target.value })}
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 cursor-pointer"
+                      >
+                        <option value="Morning (08:00 AM - 12:00 PM)">Morning (08:00 AM - 12:00 PM)</option>
+                        <option value="Afternoon (12:00 PM - 04:00 PM)">Afternoon (12:00 PM - 04:00 PM)</option>
+                        <option value="Evening (04:00 PM - 08:00 PM)">Evening (04:00 PM - 08:00 PM)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Number of Persons <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Users className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <select
+                        value={bookingForm.persons}
+                        onChange={(e) => setBookingForm({ ...bookingForm, persons: e.target.value })}
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 cursor-pointer"
+                      >
+                        <option value="1">1 Person (Individual)</option>
+                        <option value="2">2 Persons</option>
+                        <option value="3">3 Persons</option>
+                        <option value="4+">4+ Persons (Family Package)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Submit button with WhatsApp indicator */}
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Direct WhatsApp routing to +91 9393934621</span>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full sm:w-auto px-8 py-3.5 bg-[#25D366] hover:bg-[#20ba59] active:scale-[0.98] text-white text-sm font-bold rounded-xl shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2.5 cursor-pointer"
+                  >
+                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                    </svg>
+                    <span>Book Now</span>
+                    <ArrowRight className="w-4 h-4 ml-1" />
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+        </div>
+      </section>
+
+      {/* Clean Footer */}
+      <footer className="bg-slate-900 text-slate-400 py-10 border-t border-slate-800 text-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-white text-sm">nhealth</span>
+            <span>• Bharat's Biggest Unified Healthcare Network</span>
+          </div>
+          <div className="flex items-center gap-6">
+            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
+            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
+            <a href="#" className="hover:text-white transition-colors">ABDM Compliance</a>
+            <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="hover:text-emerald-400 transition-colors">Helpline +91 9393934621</a>
+          </div>
+        </div>
+      </footer>
+
+      {/* Floating WhatsApp Action Button with Notification Pulse & Bounce */}
+      <div className="fixed bottom-6 right-6 z-50 flex items-center group">
+        <div className="hidden sm:flex items-center gap-2 bg-slate-900/95 backdrop-blur-xs text-white text-xs font-semibold py-2 px-3.5 rounded-full mr-3 shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap border border-slate-700">
+          <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
+          <span>Chat on WhatsApp: +91 9393934621</span>
+        </div>
+
+        <a
+          href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+            'Hello nhealth Support, I would like to inquire about healthcare services on the network.'
+          )}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Direct WhatsApp Consultation"
+          className="relative flex items-center justify-center w-14 h-14 bg-[#25D366] hover:bg-[#20ba59] text-white rounded-full shadow-2xl transition-all duration-300 transform hover:scale-110 active:scale-95 animate-wa-bounce animate-wa-glow focus:outline-none focus:ring-4 focus:ring-emerald-400/40 cursor-pointer"
+        >
+          <span className="absolute -top-1 -right-1 flex h-5 w-5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-80"></span>
+            <span className="relative inline-flex rounded-full h-5 w-5 bg-rose-600 text-[10px] font-bold text-white items-center justify-center shadow-xs">
+              1
+            </span>
+          </span>
+
+          <svg className="w-7 h-7 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+          </svg>
+        </a>
+      </div>
+    </div>
+  );
+}

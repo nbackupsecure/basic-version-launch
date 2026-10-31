@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@keyframes gentle-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes green-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(37, 211, 102, 0);
+  }
+}
+
+.animate-wa-bounce {
+  animation: gentle-bounce 3s infinite ease-in-out;
+}
+
+.animate-wa-glow {
+  animation: green-glow 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes scooty-drive {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100vw);
+  }
+}
+
+.scooty-mover {
+  display: inline-block;
+  will-change: transform;
+  animation: scooty-drive 22s linear infinite;
+}

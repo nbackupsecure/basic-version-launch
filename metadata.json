@@ -1,0 +1,6 @@
+{
+  "name": "nhealth - Unified Healthcare Network",
+  "description": "Bharat's Biggest Unified Healthcare Network connecting doctors, clinics, diagnostics, and patients.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
