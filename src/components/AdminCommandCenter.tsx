@@ -12,8 +12,10 @@ import {
   Users,
   LogOut,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export interface PatientVitalRecord {
   id: string;
@@ -62,14 +64,55 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Initialize with empty array - strictly no hardcoded customer data
   const [records, setRecords] = useState<PatientVitalRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
-  // Load records from localStorage without mock data fallbacks
-  useEffect(() => {
+  // Fetch records dynamically from Supabase vital_scans table or local cache
+  const fetchRecords = async () => {
+    setIsLoading(true);
+    try {
+      if (isSupabaseConfigured) {
+        const { data, error } = await supabase
+          .from('vital_scans')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data)) {
+          const mapped: PatientVitalRecord[] = data.map((d: any) => ({
+            id: String(d.id),
+            fullName: d.full_name || 'N/A',
+            phone: d.phone_number || d.phone || 'N/A',
+            city: d.city || 'N/A',
+            gender: d.gender || 'Other',
+            heartRate: Number(d.heart_rate || 72),
+            spo2: Number(d.spo2 || 98),
+            respiratoryRate: Number(d.respiratory_rate || 16),
+            stressLevel: d.stress_level || 'Normal',
+            stressScore: Number(d.stress_score || 20),
+            hrv: Number(d.hrv || 50),
+            timestamp: d.created_at ? new Date(d.created_at).toLocaleTimeString() : new Date().toLocaleTimeString(),
+            createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
+          }));
+          setRecords(mapped);
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
+          } catch {
+            // safe storage boundary
+          }
+          return;
+        }
+      }
+    } catch {
+      // Safe fallback if Supabase is offline
+    } finally {
+      setIsLoading(false);
+    }
+
+    // Local storage fallback
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
@@ -83,7 +126,13 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
     } catch {
       setRecords([]);
     }
-  }, []);
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchRecords();
+    }
+  }, [isAuthenticated]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,13 +169,21 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
     setPasscode('');
   };
 
-  const handleDeleteRecord = (id: string) => {
+  const handleDeleteRecord = async (id: string) => {
     const updated = records.filter((r) => r.id !== id);
     setRecords(updated);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     } catch {
       // Safe storage error boundary
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('vital_scans').delete().eq('id', id);
+      } catch {
+        // Safe database error boundary
+      }
     }
   };
 
@@ -562,6 +619,18 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
                   className="w-full pl-9 pr-3 py-2 text-xs bg-slate-950/70 border border-slate-700 rounded-xl focus:outline-none focus:border-purple-500 text-white placeholder-slate-500"
                 />
               </div>
+
+              {/* Live Sync Action */}
+              <button
+                type="button"
+                onClick={fetchRecords}
+                disabled={isLoading}
+                className="py-2 px-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-300 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Refresh and sync data from Supabase"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                <span>{isLoading ? 'Syncing...' : 'Sync Data'}</span>
+              </button>
 
               {/* Bulk PDF Action */}
               <button

@@ -17,6 +17,7 @@ import {
   MapPin,
   Phone
 } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export interface PatientInfo {
   fullName: string;
@@ -450,6 +451,31 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             } catch {
               // Safe storage fallback
             }
+
+            // Sync to Supabase vital_scans table
+            if (isSupabaseConfigured) {
+              (async () => {
+                try {
+                  await supabase.from('vital_scans').insert([
+                    {
+                      full_name: patientInfo.fullName || 'Anonymous Patient',
+                      phone_number: patientInfo.phone || 'N/A',
+                      city: patientInfo.city || 'N/A',
+                      gender: patientInfo.gender || 'Other',
+                      heart_rate: liveVitals.heartRate,
+                      spo2: liveVitals.spo2,
+                      respiratory_rate: liveVitals.respiratoryRate,
+                      stress_level: liveVitals.stressLevel,
+                      stress_score: liveVitals.stressScore,
+                      hrv: liveVitals.hrv
+                    }
+                  ]);
+                } catch {
+                  // Safe fallback
+                }
+              })();
+            }
+
             if (onScanComplete) {
               onScanComplete(liveVitals, patientInfo);
             }
