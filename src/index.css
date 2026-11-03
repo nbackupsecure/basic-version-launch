@@ -18,12 +18,25 @@
   }
 }
 
+@keyframes purple-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(147, 51, 234, 0);
+  }
+}
+
 .animate-wa-bounce {
   animation: gentle-bounce 3s infinite ease-in-out;
 }
 
 .animate-wa-glow {
   animation: green-glow 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+.animate-purple-glow {
+  animation: purple-glow 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 @keyframes scooty-drive {
