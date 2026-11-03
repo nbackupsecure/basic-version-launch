@@ -28,7 +28,8 @@ import {
   Car,
   Home,
   HeartHandshake,
-  Scan
+  Scan,
+  Mail
 } from 'lucide-react';
 
 export default function App() {
@@ -86,7 +87,7 @@ export default function App() {
   // WhatsApp formatted redirection with exact selected service and patient fields
   const formatWhatsAppBookingUrl = () => {
     const text =
-      `*New Healthcare Appointment - nhealth*\n` +
+      `*New Healthcare Appointment - Nhealth*\n` +
       `--------------------------------\n` +
       `• *Selected Service:* ${activeService.name}\n` +
       `• *Patient Full Name:* ${bookingForm.fullName}\n` +
@@ -98,7 +99,7 @@ export default function App() {
       `• *Time Slot:* ${bookingForm.timeSlot}\n` +
       `• *Number of Persons:* ${bookingForm.persons}\n` +
       `--------------------------------\n` +
-      `_Sent via nhealth Unified Healthcare Network_`;
+      `_Sent via Nhealth Unified Healthcare Network_`;
     return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
   };
 
@@ -140,7 +141,7 @@ export default function App() {
               <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 overflow-hidden shadow-xs shrink-0">
                 <img
                   src="https://i.ibb.co/DPnzhmNM/Nhealth-logo-8cm-x-8cm-high-quality-3.png"
-                  alt="nhealth Logo"
+                  alt="Nhealth Logo"
                   className="w-full h-full object-contain p-0.5"
                   style={{ height: '38px', width: 'auto' }}
                   onError={(e) => {
@@ -164,7 +165,7 @@ export default function App() {
               </div>
               <div className="flex flex-col">
                 <span className="text-xl sm:text-2xl font-black tracking-tight text-blue-950 font-sans flex items-center">
-                  nhealth<span className="text-blue-600">.</span>
+                  Nhealth<span className="text-blue-600">.</span>
                 </span>
                 <span className="text-[9px] sm:text-[10px] tracking-wider uppercase font-semibold text-slate-500 -mt-0.5 sm:-mt-1">
                   Unified Healthcare Network
@@ -176,12 +177,13 @@ export default function App() {
             <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
               <a href="#services" className="hover:text-blue-600 transition-colors">Services</a>
               <a href="#booking-form" className="hover:text-blue-600 transition-colors">Book Appointment</a>
+              <a href="#contact" className="hover:text-blue-600 transition-colors">Contact Us</a>
             </nav>
 
             {/* Desktop Action Buttons */}
             <div className="hidden md:flex items-center gap-3">
               <a
-                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello nhealth Team, I would like to inquire about healthcare services.')}`}
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello Nhealth Team, I would like to inquire about healthcare services.')}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-3.5 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center gap-1.5"
@@ -243,6 +245,13 @@ export default function App() {
                 className="px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600"
               >
                 Book Appointment
+              </a>
+              <a
+                href="#contact"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-lg hover:bg-blue-50 hover:text-blue-600"
+              >
+                Contact Us
               </a>
             </nav>
             <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
@@ -319,7 +328,7 @@ export default function App() {
                 </div>
                 <div className="flex-1 text-xs sm:text-sm text-slate-700 leading-relaxed font-normal">
                   <span className="font-bold text-blue-950 block sm:inline sm:mr-1.5">Launch Announcement:</span>
-                  The fully automated nhealth application will be launching shortly. To ensure uninterrupted care in the meantime, we have introduced this initial version to serve you better.
+                  The fully automated Nhealth application will be launching shortly. To ensure uninterrupted care in the meantime, we have introduced this initial version to serve you better.
                 </div>
               </div>
 
@@ -722,17 +731,116 @@ export default function App() {
         </div>
       </section>
 
+      {/* Contact Us Section (#0b192c Dark Blue Theme Palette) */}
+      <section id="contact" className="py-16 sm:py-20 bg-[#0b192c] text-slate-100 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-12">
+            <div className="inline-flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-blue-400 bg-blue-950/70 px-3.5 py-1.5 rounded-full mb-3 border border-blue-800/60">
+              <Mail className="w-3.5 h-3.5" />
+              <span>Get In Touch</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
+              Contact <span className="text-blue-400">Nhealth</span> Support & Helpdesk
+            </h2>
+            <p className="mt-2 text-sm sm:text-base text-slate-400">
+              Direct assistance for patients, families, verified doctors, diagnostic laboratories, and hospital network partners across Bharat.
+            </p>
+          </div>
+
+          {/* Centered Official Contact Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto mb-10">
+            {/* Corporate Email Card */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-7 flex flex-col items-center text-center shadow-xl hover:border-slate-700 transition-all">
+              <div className="w-12 h-12 rounded-2xl bg-blue-950/80 border border-blue-800/60 text-blue-400 flex items-center justify-center mb-4 shadow-inner">
+                <Mail className="w-6 h-6" />
+              </div>
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Corporate Email</div>
+              <a
+                href="mailto:support@nhealth.in"
+                className="text-base sm:text-lg font-bold text-white hover:text-blue-400 transition-colors"
+              >
+                support@nhealth.in
+              </a>
+              <p className="mt-2 text-xs text-slate-400">Official inquiries, partnerships & support desk</p>
+            </div>
+
+            {/* Direct Emergency Helpline Card */}
+            <div className="bg-slate-900/90 border border-blue-900/40 rounded-2xl p-6 sm:p-7 flex flex-col items-center text-center shadow-xl hover:border-blue-700/50 transition-all relative">
+              <div className="w-12 h-12 rounded-2xl bg-blue-900/40 border border-blue-600/50 text-blue-300 flex items-center justify-center mb-4 shadow-inner">
+                <Phone className="w-6 h-6" />
+              </div>
+              <div className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-1">Direct Helplines</div>
+              <div className="space-y-1.5 w-full flex flex-col items-center">
+                <a
+                  href="tel:+919393934621"
+                  className="text-base sm:text-lg font-bold text-white hover:text-blue-400 transition-colors inline-flex items-center gap-1.5"
+                >
+                  <span>+91 9393934621</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/70 text-blue-300 font-medium">Primary</span>
+                </a>
+                <a href="tel:+919581582220" className="text-sm font-semibold text-slate-300 hover:text-blue-400 transition-colors">
+                  +91 9581582220
+                </a>
+                <a href="tel:+919393932969" className="text-sm font-semibold text-slate-300 hover:text-blue-400 transition-colors">
+                  +91 9393932969
+                </a>
+              </div>
+              <p className="mt-2 text-xs text-slate-400">24/7 Dispatch & Emergency Coordination</p>
+            </div>
+
+            {/* Corporate Address Card */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-7 flex flex-col items-center text-center shadow-xl hover:border-slate-700 transition-all">
+              <div className="w-12 h-12 rounded-2xl bg-blue-950/80 border border-blue-800/60 text-blue-400 flex items-center justify-center mb-4 shadow-inner">
+                <MapPin className="w-6 h-6" />
+              </div>
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Corporate Address</div>
+              <p className="text-sm sm:text-base font-semibold text-white leading-snug">
+                Nhealth Unified Healthcare Technologies Private Limited
+              </p>
+              <p className="mt-1 text-xs text-slate-400">Andhra Pradesh, India</p>
+            </div>
+          </div>
+
+          {/* Centered Direct WhatsApp Callout Banner */}
+          <div className="max-w-2xl mx-auto bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 rounded-2xl p-6 sm:p-8 text-center shadow-2xl space-y-4">
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-3 py-1 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
+              <span>Instant WhatsApp Assistance</span>
+            </div>
+            <h3 className="text-lg sm:text-xl font-bold text-white">
+              Connect With Nhealth Care Coordinators
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-300 max-w-lg mx-auto">
+              Get immediate responses for care rider dispatch, doctor consultations, lab tests, or hospital admission assistance across Bharat.
+            </p>
+            <div className="pt-2 flex justify-center">
+              <a
+                href="https://wa.me/919393934621?text=Hello%20Nhealth%20Team%2C%20I%20would%20like%20to%20connect%20with%20support."
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full sm:w-auto px-8 py-3.5 bg-[#25D366] hover:bg-[#20ba59] active:scale-[0.98] text-white font-bold text-sm sm:text-base rounded-xl transition-all shadow-lg shadow-emerald-500/20 inline-flex items-center justify-center gap-2.5 cursor-pointer"
+              >
+                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+                </svg>
+                <span>Connect on WhatsApp (+91 9393934621)</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Clean Footer */}
       <footer className="bg-slate-900 text-slate-400 py-10 border-t border-slate-800 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-white text-sm">nhealth</span>
+            <span className="font-bold text-white text-sm">Nhealth</span>
             <span>• Bharat's Biggest Unified Healthcare Network</span>
           </div>
-          <div className="flex items-center gap-6">
-            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-white transition-colors">ABDM Compliance</a>
+          <div className="flex items-center flex-wrap gap-4 sm:gap-6">
+            <a href="#services" className="hover:text-white transition-colors">Services</a>
+            <a href="#booking-form" className="hover:text-white transition-colors">Book Now</a>
+            <a href="#contact" className="hover:text-white transition-colors">Contact Us</a>
             <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="hover:text-emerald-400 transition-colors">Helpline +91 9393934621</a>
           </div>
         </div>
@@ -747,7 +855,7 @@ export default function App() {
 
         <a
           href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
-            'Hello nhealth Support, I would like to inquire about healthcare services on the network.'
+            'Hello Nhealth Support, I would like to inquire about healthcare services on the network.'
           )}`}
           target="_blank"
           rel="noopener noreferrer"
