@@ -36,7 +36,11 @@
 }
 
 .scooty-mover {
-  display: inline-block;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  white-space: nowrap !important;
+  align-items: flex-end !important;
   will-change: transform;
   animation: scooty-drive 22s linear infinite;
 }

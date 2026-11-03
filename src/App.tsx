@@ -40,6 +40,7 @@ export default function App() {
 
   const [bookingForm, setBookingForm] = useState({
     fullName: '',
+    gender: 'Male',
     phone: '',
     address: '',
     pincode: '',
@@ -75,6 +76,7 @@ export default function App() {
   // Select service and smoothly target booking form
   const handleServiceSelect = (serviceId: string) => {
     setSelectedServiceId(serviceId);
+    setBookingSubmitted(false);
     const formElement = document.getElementById('booking-form');
     if (formElement) {
       formElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -88,6 +90,7 @@ export default function App() {
       `--------------------------------\n` +
       `• *Selected Service:* ${activeService.name}\n` +
       `• *Patient Full Name:* ${bookingForm.fullName}\n` +
+      `• *Gender:* ${bookingForm.gender}\n` +
       `• *Phone Number:* +91 ${bookingForm.phone}\n` +
       `• *Patient Address:* ${bookingForm.address}\n` +
       `• *Pincode:* ${bookingForm.pincode}\n` +
@@ -111,14 +114,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
       {/* Top Banner */}
-      <div className="bg-blue-900 text-blue-100 text-xs sm:text-sm py-1.5 px-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>ABDM Aligned • 24/7 Unified Emergency & Healthcare Network Across Bharat</span>
+      <div className="bg-blue-900 text-blue-100 text-xs sm:text-sm py-2 px-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 mx-auto sm:mx-0 text-center sm:text-left">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span className="font-semibold text-slate-100 tracking-tight">
+              Bharat Biggest Healthcare Network - Nhealth Unified & At-Home Healthcare
+            </span>
           </div>
-          <div className="hidden sm:flex items-center gap-4 text-xs">
-            <span className="flex items-center gap-1">
+          <div className="hidden lg:flex items-center gap-4 text-xs shrink-0">
+            <span className="flex items-center gap-1 text-blue-200">
               <PhoneCall className="w-3.5 h-3.5 text-blue-300" />
               Direct Helpline: +91 9393934621
             </span>
@@ -179,20 +184,36 @@ export default function App() {
                 href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hello nhealth Team, I would like to inquire about healthcare services.')}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center gap-1.5"
+                className="px-3.5 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors flex items-center gap-1.5"
               >
                 <span>WhatsApp Desk</span>
               </a>
+              <button
+                type="button"
+                onClick={() => handleServiceSelect('careride')}
+                className="px-4 py-2 text-sm font-bold text-amber-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 shadow-sm shadow-amber-500/25 rounded-lg transition-all active:scale-[0.98] flex items-center gap-1.5 cursor-pointer"
+              >
+                <Car className="w-4 h-4 text-amber-950" />
+                <span>Book (Care Rider)</span>
+              </button>
               <a
                 href="#booking-form"
-                className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-500/20 rounded-lg transition-all active:scale-[0.98]"
+                className="px-4.5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 shadow-sm shadow-blue-500/20 rounded-lg transition-all active:scale-[0.98]"
               >
                 Book Now
               </a>
             </div>
 
-            {/* Mobile Hamburger Button */}
-            <div className="flex md:hidden">
+            {/* Mobile Actions & Hamburger */}
+            <div className="flex md:hidden items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleServiceSelect('careride')}
+                className="px-3 py-1.5 text-xs font-bold text-amber-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 rounded-lg shadow-xs flex items-center gap-1 active:scale-95 cursor-pointer"
+              >
+                <Car className="w-3.5 h-3.5" />
+                <span>Book (Care Rider)</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -225,6 +246,17 @@ export default function App() {
               </a>
             </nav>
             <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleServiceSelect('careride');
+                }}
+                className="w-full py-2.5 text-center text-sm font-bold text-amber-950 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 rounded-lg shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Car className="w-4 h-4" />
+                <span>Book (Care Rider)</span>
+              </button>
               <a
                 href="#booking-form"
                 onClick={() => setMobileMenuOpen(false)}
@@ -247,14 +279,29 @@ export default function App() {
           }}
         />
 
-        {/* Continuous Moving Scooty Animation (Between Header and Launch Announcement) */}
-        <div className="relative w-full overflow-hidden pt-1 pb-2.5 sm:pb-3.5 mb-2 select-none pointer-events-none">
+        {/* Continuous Moving Vehicles Animation (Between Header and Launch Announcement) */}
+        <div className="relative w-full overflow-hidden pt-1 pb-2 sm:pb-3 mb-2 select-none pointer-events-none">
           <div className="absolute inset-x-0 bottom-2 sm:bottom-2.5 border-b border-dashed border-blue-200/80" />
-          <div className="scooty-mover inline-flex items-center">
+          <div className="scooty-mover inline-flex items-end gap-5 sm:gap-7 md:gap-8 shrink-0">
+            {/* Trailing Car (Behind Auto Rickshaw) */}
+            <img
+              src="/car-cutout.png"
+              alt="nhealth Healthcare at Home Car"
+              className="h-12 sm:h-16 md:h-20 w-auto object-contain drop-shadow-md shrink-0 block"
+              loading="eager"
+            />
+            {/* Middle Auto Rickshaw */}
+            <img
+              src="/auto-cutout.png"
+              alt="nhealth Auto Care Ride"
+              className="h-12 sm:h-15 md:h-19 w-auto object-contain drop-shadow-md shrink-0 block"
+              loading="eager"
+            />
+            {/* Leading Scooty (In Front) */}
             <img
               src="/scooty-cutout.png"
               alt="nhealth Home Healthcare Caregiver on Scooty"
-              className="h-12 sm:h-16 md:h-20 w-auto object-contain drop-shadow-md"
+              className="h-11 sm:h-14 md:h-18 w-auto object-contain drop-shadow-md shrink-0 block"
               loading="eager"
             />
           </div>
@@ -274,11 +321,6 @@ export default function App() {
                   <span className="font-bold text-blue-950 block sm:inline sm:mr-1.5">Launch Announcement:</span>
                   The fully automated nhealth application will be launching shortly. To ensure uninterrupted care in the meantime, we have introduced this initial version to serve you better.
                 </div>
-              </div>
-
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-100/80 border border-blue-200 text-blue-900 text-xs sm:text-sm font-semibold">
-                <ShieldCheck className="w-4 h-4 text-blue-600" />
-                <span>Empowering 1.4 Billion Citizens with Seamless Care</span>
               </div>
 
               <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-slate-900 tracking-tight leading-[1.15]">
@@ -307,22 +349,6 @@ export default function App() {
                     <span>Explore Services</span>
                     <ArrowRight className="w-4 h-4" />
                   </a>
-                </div>
-              </div>
-
-              {/* Metrics */}
-              <div className="pt-4 grid grid-cols-3 gap-4 border-t border-slate-200/80 max-w-lg mx-auto lg:mx-0">
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-slate-900">75,000+</div>
-                  <div className="text-xs text-slate-500 font-medium">Unified Clinics & Labs</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-blue-600">120K+</div>
-                  <div className="text-xs text-slate-500 font-medium">Registered Doctors</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-slate-900">28 States</div>
-                  <div className="text-xs text-slate-500 font-medium">Nationwide Coverage</div>
                 </div>
               </div>
             </div>
@@ -465,7 +491,7 @@ export default function App() {
                 </div>
                 <h3 className="text-xl font-bold text-slate-900">Appointment Request Prepared!</h3>
                 <p className="text-sm text-slate-600 max-w-md mx-auto">
-                  Thank you, <span className="font-semibold text-slate-900">{bookingForm.fullName}</span>. Your details for <span className="font-semibold text-blue-700">{activeService.name}</span> on <span className="font-semibold text-slate-900">{bookingForm.date || 'Earliest slot'}</span> have been formatted.
+                  Thank you, <span className="font-semibold text-slate-900">{bookingForm.fullName}</span> ({bookingForm.gender}). Your details for <span className="font-semibold text-blue-700">{activeService.name}</span> on <span className="font-semibold text-slate-900">{bookingForm.date || 'Earliest slot'}</span> have been formatted.
                 </p>
                 <div className="inline-block bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-xs text-emerald-800 font-medium">
                   Dispatching to Official WhatsApp: <span className="font-mono font-bold">+91 9393934621</span>
@@ -490,6 +516,7 @@ export default function App() {
                       setBookingSubmitted(false);
                       setBookingForm({
                         fullName: '',
+                        gender: 'Male',
                         phone: '',
                         address: '',
                         pincode: '',
@@ -518,9 +545,9 @@ export default function App() {
                   <a href="#services" className="text-blue-600 hover:underline font-semibold">Change Service</a>
                 </div>
 
-                {/* 1. Full Name & 2. Phone Number */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
+                {/* 1. Full Name, 2. Gender & 3. Phone Number */}
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                  <div className="sm:col-span-5">
                     <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                       Full Name <span className="text-red-500">*</span>
                     </label>
@@ -537,7 +564,25 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div>
+                  <div className="sm:col-span-3">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Gender <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <select
+                        required
+                        value={bookingForm.gender}
+                        onChange={(e) => setBookingForm({ ...bookingForm, gender: e.target.value })}
+                        className="w-full px-3 py-2.5 text-sm bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all text-slate-800 cursor-pointer"
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-4">
                     <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                       Phone Number <span className="text-red-500">*</span>
                     </label>
