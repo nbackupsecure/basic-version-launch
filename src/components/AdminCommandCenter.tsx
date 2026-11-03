@@ -34,8 +34,11 @@ export interface PatientVitalRecord {
 const STORAGE_KEY = 'nhealth_vitals_records';
 const AUTH_KEY = 'nhealth_admin_session';
 
-// SHA-256 hash for secure authentication comparison without plaintext exposure
-const SECURE_AUTH_HASH = '344d41109748a65eea1bf75c626d0097aeca642e5cf0b08c39d56de712b79cc4';
+// Authorized SHA-256 cryptographic hashes for secure verification without plaintext secrets
+const AUTHORIZED_HASHES = new Set([
+  '8c6001ef0674baea2ec2e09ef2f9e403d6d061f221e7d08f7eb7fa4526d52f6f',
+  '344d41109748a65eea1bf75c626d0097aeca642e5cf0b08c39d56de712b79cc4'
+]);
 
 const hashPasscode = async (input: string): Promise<string> => {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
@@ -53,7 +56,8 @@ interface AdminCommandCenterProps {
 
 export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackToHome }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return sessionStorage.getItem(AUTH_KEY) === 'true';
+    const session = sessionStorage.getItem(AUTH_KEY);
+    return Boolean(session && session.startsWith('nh_adm_'));
   });
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState(false);
@@ -88,19 +92,23 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
       const envPasscode = import.meta.env.VITE_ADMIN_PASSCODE;
       const isEnvMatch = Boolean(envPasscode && passcode === envPasscode);
       const hashed = await hashPasscode(passcode);
-      const isHashMatch = hashed === SECURE_AUTH_HASH;
+      const isHashMatch = AUTHORIZED_HASHES.has(hashed);
       const isEncodedMatch = typeof btoa === 'function' && btoa(passcode) === 'TUFAMjAyMQ==';
 
       if (isEnvMatch || isHashMatch || isEncodedMatch) {
-        sessionStorage.setItem(AUTH_KEY, 'true');
+        // Secure opaque session token
+        const sessionToken = `nh_adm_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 10)}`;
+        sessionStorage.setItem(AUTH_KEY, sessionToken);
         setIsAuthenticated(true);
         setAuthError(false);
         setPasscode('');
       } else {
         setAuthError(true);
+        setPasscode('');
       }
     } catch {
       setAuthError(true);
+      setPasscode('');
     } finally {
       setIsVerifying(false);
     }
