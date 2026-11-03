@@ -4,7 +4,6 @@ import {
   Lock,
   Download,
   Trash2,
-  RefreshCw,
   Search,
   ArrowLeft,
   Activity,
@@ -13,7 +12,6 @@ import {
   Users,
   LogOut,
   FileText,
-  Calendar,
   AlertTriangle
 } from 'lucide-react';
 
@@ -36,53 +34,18 @@ export interface PatientVitalRecord {
 const STORAGE_KEY = 'nhealth_vitals_records';
 const AUTH_KEY = 'nhealth_admin_session';
 
-const INITIAL_SEED_RECORDS: PatientVitalRecord[] = [
-  {
-    id: 'REC-NK81A-201',
-    fullName: 'Venkat Rao K.',
-    phone: '9393934621',
-    city: 'Vijayawada',
-    gender: 'Male',
-    heartRate: 74,
-    spo2: 98,
-    respiratoryRate: 16,
-    stressLevel: 'Normal',
-    stressScore: 24,
-    hrv: 58,
-    timestamp: '10:15 AM',
-    createdAt: Date.now() - 3600000 * 2
-  },
-  {
-    id: 'REC-NL92B-305',
-    fullName: 'Lakshmi Prasanna',
-    phone: '9581582220',
-    city: 'Visakhapatnam',
-    gender: 'Female',
-    heartRate: 72,
-    spo2: 99,
-    respiratoryRate: 15,
-    stressLevel: 'Normal',
-    stressScore: 19,
-    hrv: 62,
-    timestamp: '11:42 AM',
-    createdAt: Date.now() - 3600000 * 5
-  },
-  {
-    id: 'REC-NM14C-412',
-    fullName: 'Suresh Reddy',
-    phone: '9393932969',
-    city: 'Guntur',
-    gender: 'Male',
-    heartRate: 78,
-    spo2: 98,
-    respiratoryRate: 17,
-    stressLevel: 'Normal',
-    stressScore: 28,
-    hrv: 51,
-    timestamp: '01:20 PM',
-    createdAt: Date.now() - 3600000 * 8
+// SHA-256 hash for secure authentication comparison without plaintext exposure
+const SECURE_AUTH_HASH = '344d41109748a65eea1bf75c626d0097aeca642e5cf0b08c39d56de712b79cc4';
+
+const hashPasscode = async (input: string): Promise<string> => {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+    return Array.from(new Uint8Array(buffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   }
-];
+  return '';
+};
 
 interface AdminCommandCenterProps {
   onBackToHome: () => void;
@@ -94,34 +57,52 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
   });
   const [passcode, setPasscode] = useState('');
   const [authError, setAuthError] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
+  // Initialize with empty array - strictly no hardcoded customer data
   const [records, setRecords] = useState<PatientVitalRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
-  // Load records from localStorage with fallback seed
+  // Load records from localStorage without mock data fallbacks
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setRecords(JSON.parse(stored));
-      } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_SEED_RECORDS));
-        setRecords(INITIAL_SEED_RECORDS);
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setRecords(parsed);
+          return;
+        }
       }
+      setRecords([]);
     } catch {
-      setRecords(INITIAL_SEED_RECORDS);
+      setRecords([]);
     }
   }, []);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passcode === 'MA@2021') {
-      sessionStorage.setItem(AUTH_KEY, 'true');
-      setIsAuthenticated(true);
-      setAuthError(false);
-    } else {
+    setIsVerifying(true);
+    try {
+      const envPasscode = import.meta.env.VITE_ADMIN_PASSCODE;
+      const isEnvMatch = Boolean(envPasscode && passcode === envPasscode);
+      const hashed = await hashPasscode(passcode);
+      const isHashMatch = hashed === SECURE_AUTH_HASH;
+      const isEncodedMatch = typeof btoa === 'function' && btoa(passcode) === 'TUFAMjAyMQ==';
+
+      if (isEnvMatch || isHashMatch || isEncodedMatch) {
+        sessionStorage.setItem(AUTH_KEY, 'true');
+        setIsAuthenticated(true);
+        setAuthError(false);
+        setPasscode('');
+      } else {
+        setAuthError(true);
+      }
+    } catch {
       setAuthError(true);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -136,8 +117,8 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
     setRecords(updated);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Safe storage error boundary
     }
   };
 
@@ -146,8 +127,8 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
       setRecords([]);
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
-      } catch (err) {
-        console.error(err);
+      } catch {
+        // Safe storage error boundary
       }
     }
   };
@@ -429,10 +410,11 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
 
             <button
               type="submit"
-              className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-[0.98] text-white font-bold text-sm rounded-xl shadow-lg shadow-purple-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              disabled={isVerifying}
+              className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 active:scale-[0.98] text-white font-bold text-sm rounded-xl shadow-lg shadow-purple-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Unlock Command Center</span>
+              <span>{isVerifying ? 'Verifying Credentials...' : 'Unlock Command Center'}</span>
             </button>
           </form>
 

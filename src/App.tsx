@@ -8,15 +8,7 @@ import {
   ArrowRight,
   PhoneCall,
   Users,
-  Building2,
-  Stethoscope,
-  FlaskConical,
-  HeartPulse,
-  Syringe,
-  Pill,
-  Smile,
   CheckCircle2,
-  ChevronRight,
   User,
   Phone,
   MapPin,
@@ -24,38 +16,33 @@ import {
   Clock,
   Sparkles,
   Rocket,
-  Droplet,
   Car,
-  Home,
-  HeartHandshake,
-  Scan,
   Mail,
   Heart
 } from 'lucide-react';
 import { VitalLensModal } from './components/VitalLensModal';
 import { AdminCommandCenter } from './components/AdminCommandCenter';
 
+const isCommandCenterRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const p = (window.location.pathname || '').toLowerCase();
+  const h = (window.location.hash || '').toLowerCase();
+  const s = (window.location.search || '').toLowerCase();
+  return (
+    p.includes('command-center') ||
+    h.includes('command-center') ||
+    s.includes('command-center')
+  );
+};
+
 export default function App() {
   const [currentPath, setCurrentPath] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      const p = window.location.pathname;
-      const h = window.location.hash;
-      if (p.startsWith('/command-center') || h.startsWith('#/command-center')) {
-        return '/command-center';
-      }
-    }
-    return '/';
+    return isCommandCenterRoute() ? '/command-center' : '/';
   });
 
   React.useEffect(() => {
     const handleLocationChange = () => {
-      const p = window.location.pathname;
-      const h = window.location.hash;
-      if (p.startsWith('/command-center') || h.startsWith('#/command-center')) {
-        setCurrentPath('/command-center');
-      } else {
-        setCurrentPath('/');
-      }
+      setCurrentPath(isCommandCenterRoute() ? '/command-center' : '/');
     };
 
     window.addEventListener('popstate', handleLocationChange);
@@ -68,7 +55,14 @@ export default function App() {
 
   const navigate = (path: string) => {
     if (typeof window !== 'undefined') {
-      window.history.pushState({}, '', path);
+      if (path === '/command-center') {
+        window.history.pushState({}, '', '/command-center');
+      } else {
+        window.history.pushState({}, '', '/');
+        if (window.location.hash.toLowerCase().includes('command-center')) {
+          window.location.hash = '';
+        }
+      }
       setCurrentPath(path);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }

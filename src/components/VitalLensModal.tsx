@@ -13,7 +13,6 @@ import {
   Flame,
   ArrowRight,
   Download,
-  FileText,
   User,
   MapPin,
   Phone
@@ -448,8 +447,8 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             try {
               const existing = JSON.parse(localStorage.getItem('nhealth_vitals_records') || '[]');
               localStorage.setItem('nhealth_vitals_records', JSON.stringify([record, ...existing]));
-            } catch (err) {
-              console.error(err);
+            } catch {
+              // Safe storage fallback
             }
             if (onScanComplete) {
               onScanComplete(liveVitals, patientInfo);
