@@ -14,8 +14,17 @@ import {
   ArrowRight,
   Download,
   FileText,
-  User
+  User,
+  MapPin,
+  Phone
 } from 'lucide-react';
+
+export interface PatientInfo {
+  fullName: string;
+  phone: string;
+  city: string;
+  gender: string;
+}
 
 export interface VitalReadings {
   heartRate: number;
@@ -30,7 +39,7 @@ export interface VitalReadings {
 interface VitalLensModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onScanComplete?: (vitals: VitalReadings) => void;
+  onScanComplete?: (vitals: VitalReadings, patient?: PatientInfo) => void;
 }
 
 export const VitalLensModal: React.FC<VitalLensModalProps> = ({
@@ -38,7 +47,14 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
   onClose,
   onScanComplete
 }) => {
-  const [step, setStep] = useState<'consent' | 'scanning' | 'completed'>('consent');
+  const [step, setStep] = useState<'details' | 'consent' | 'scanning' | 'completed'>('details');
+  const [patientInfo, setPatientInfo] = useState<PatientInfo>({
+    fullName: '',
+    phone: '',
+    city: '',
+    gender: 'Male'
+  });
+  const [formError, setFormError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
   const [scanStatus, setScanStatus] = useState<string>('Initializing optical sensors...');
   const [cameraActive, setCameraActive] = useState<boolean>(false);
@@ -71,10 +87,31 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
   // Close handler
   const handleModalClose = () => {
     stopCamera();
-    setStep('consent');
+    setStep('details');
     setProgress(0);
     setCameraError(null);
+    setFormError(null);
     onClose();
+  };
+
+  // Form submission handler for pre-scan details
+  const handleDetailsSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!patientInfo.fullName.trim()) {
+      setFormError('Please enter your full name.');
+      return;
+    }
+    const cleanPhone = patientInfo.phone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      setFormError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    if (!patientInfo.city.trim()) {
+      setFormError('Please enter your city.');
+      return;
+    }
+    setFormError(null);
+    setStep('consent');
   };
 
   // Generate & Download Printable PDF Vital Report Card
@@ -91,7 +128,6 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     const doc = printFrame.contentWindow?.document;
     if (!doc) return;
 
-    const reportId = `NHL-VL-${Date.now().toString(36).toUpperCase()}`;
     const now = new Date();
     const formattedDate = now.toLocaleDateString('en-IN', {
       day: 'numeric',
@@ -109,9 +145,9 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Nhealth Vital Report - ${reportId}</title>
+  <title>Nhealth Vital Report</title>
   <style>
-    @page { size: A4; margin: 20mm; }
+    @page { size: A4; margin: 18mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -119,49 +155,71 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       background: #ffffff;
       padding: 24px;
       line-height: 1.5;
+      position: relative;
+      overflow: hidden;
+    }
+    .watermark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-35deg);
+      font-size: 110px;
+      font-weight: 900;
+      color: rgba(11, 25, 44, 0.04);
+      letter-spacing: 12px;
+      text-transform: uppercase;
+      user-select: none;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .content-wrap {
+      position: relative;
+      z-index: 1;
     }
     .header-box {
       border-bottom: 2px solid #7c3aed;
-      padding-bottom: 18px;
+      padding-bottom: 16px;
       margin-bottom: 24px;
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-logo {
+      height: 48px;
+      width: 48px;
+      object-fit: contain;
+      border-radius: 8px;
     }
     .corp-title {
-      font-size: 20px;
-      font-weight: 800;
+      font-size: 24px;
+      font-weight: 900;
       color: #0b192c;
-      letter-spacing: -0.3px;
+      letter-spacing: -0.5px;
+      line-height: 1.1;
     }
     .sub-title {
       font-size: 13px;
       color: #7c3aed;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      margin-top: 4px;
+      letter-spacing: 0.5px;
+      margin-top: 3px;
     }
     .doc-meta {
       text-align: right;
-      font-size: 11px;
+      font-size: 12px;
       color: #64748b;
-    }
-    .badge {
-      display: inline-block;
-      padding: 3px 8px;
-      background: #f3e8ff;
-      color: #6b21a8;
-      border-radius: 9999px;
-      font-size: 10px;
-      font-weight: 700;
-      margin-top: 6px;
+      line-height: 1.5;
     }
     .section-title {
       font-size: 14px;
       font-weight: 700;
       color: #1e293b;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       border-left: 3px solid #7c3aed;
       padding-left: 8px;
     }
@@ -227,7 +285,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       border-radius: 8px;
       padding: 14px 16px;
       margin-top: 28px;
-      font-size: 10px;
+      font-size: 10.5px;
       color: #9a3412;
       line-height: 1.6;
     }
@@ -235,63 +293,75 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       margin-top: 32px;
       padding-top: 14px;
       border-top: 1px solid #e2e8f0;
-      font-size: 10px;
+      font-size: 11px;
       color: #94a3b8;
       text-align: center;
     }
   </style>
 </head>
 <body>
-  <div class="header-box">
-    <div>
-      <div class="corp-title">Nhealth Unified Healthcare Technologies Private Limited</div>
-      <div class="sub-title">Nhealth Vital Lens • Biometric Screening Report</div>
-      <div class="badge">Optical rPPG AI Vision</div>
+  <div class="watermark">Nhealth</div>
+  <div class="content-wrap">
+    <div class="header-box">
+      <div class="header-left">
+        <img src="https://i.ibb.co/JW6HFRV0/Nhealth-logo-8cm-x-8cm-high-quality-1-1.png" class="header-logo" alt="Nhealth Logo" />
+        <div>
+          <div class="corp-title">Nhealth</div>
+          <div class="sub-title">Healthcare at Home</div>
+        </div>
+      </div>
+      <div class="doc-meta">
+        <div><strong>Date:</strong> ${formattedDate}</div>
+        <div><strong>Time:</strong> ${formattedTime}</div>
+      </div>
     </div>
-    <div class="doc-meta">
-      <div><strong>Report ID:</strong> ${reportId}</div>
-      <div><strong>Date:</strong> ${formattedDate}</div>
-      <div><strong>Time:</strong> ${formattedTime}</div>
-    </div>
-  </div>
 
-  <div class="section-title">Summary of Scanned Vitals</div>
-  <div class="vitals-grid">
-    <div class="vital-card">
-      <div class="vital-label">Heart Rate (Pulse)</div>
-      <div class="vital-val">${liveVitals.heartRate} <span class="vital-unit">BPM</span></div>
-      <div class="vital-status">Normal (60-100 BPM)</div>
+    <!-- Patient Screening Profile -->
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;margin-bottom:20px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:11.5px;">
+      <div><span style="color:#64748b;font-size:10px;display:block;font-weight:600;text-transform:uppercase;">Patient Name</span><strong style="color:#0b192c;">${patientInfo.fullName || 'Patient'}</strong></div>
+      <div><span style="color:#64748b;font-size:10px;display:block;font-weight:600;text-transform:uppercase;">Mobile</span><strong style="color:#0b192c;">+91 ${patientInfo.phone || 'N/A'}</strong></div>
+      <div><span style="color:#64748b;font-size:10px;display:block;font-weight:600;text-transform:uppercase;">City</span><strong style="color:#0b192c;">${patientInfo.city || 'N/A'}</strong></div>
+      <div><span style="color:#64748b;font-size:10px;display:block;font-weight:600;text-transform:uppercase;">Gender</span><strong style="color:#0b192c;">${patientInfo.gender}</strong></div>
     </div>
-    <div class="vital-card">
-      <div class="vital-label">Blood Oxygen (SpO2)</div>
-      <div class="vital-val">${liveVitals.spo2}<span class="vital-unit">%</span></div>
-      <div class="vital-status">Optimal (95-100%)</div>
-    </div>
-    <div class="vital-card">
-      <div class="vital-label">Respiratory Rate</div>
-      <div class="vital-val">${liveVitals.respiratoryRate} <span class="vital-unit">RPM</span></div>
-      <div class="vital-status">Normal (12-20 RPM)</div>
-    </div>
-  </div>
 
-  <div class="aux-grid">
-    <div class="aux-card">
-      <span><strong>Stress Index:</strong> ${liveVitals.stressScore} / 100</span>
-      <span style="color:#0284c7;font-weight:600;">${liveVitals.stressLevel} (Low)</span>
+    <div class="section-title">Summary of Scanned Vitals</div>
+    <div class="vitals-grid">
+      <div class="vital-card">
+        <div class="vital-label">Heart Rate (Pulse)</div>
+        <div class="vital-val">${liveVitals.heartRate} <span class="vital-unit">BPM</span></div>
+        <div class="vital-status">Normal (60-100 BPM)</div>
+      </div>
+      <div class="vital-card">
+        <div class="vital-label">Blood Oxygen (SpO2)</div>
+        <div class="vital-val">${liveVitals.spo2}<span class="vital-unit">%</span></div>
+        <div class="vital-status">Optimal (95-100%)</div>
+      </div>
+      <div class="vital-card">
+        <div class="vital-label">Respiratory Rate</div>
+        <div class="vital-val">${liveVitals.respiratoryRate} <span class="vital-unit">RPM</span></div>
+        <div class="vital-status">Normal (12-20 RPM)</div>
+      </div>
     </div>
-    <div class="aux-card">
-      <span><strong>Heart Rate Variability (HRV):</strong> ${liveVitals.hrv} ms</span>
-      <span style="color:#16a34a;font-weight:600;">Good Equilibrium</span>
+
+    <div class="aux-grid">
+      <div class="aux-card">
+        <span><strong>Stress Index:</strong> ${liveVitals.stressScore} / 100</span>
+        <span style="color:#0284c7;font-weight:600;">${liveVitals.stressLevel} (Low)</span>
+      </div>
+      <div class="aux-card">
+        <span><strong>Heart Rate Variability (HRV):</strong> ${liveVitals.hrv} ms</span>
+        <span style="color:#16a34a;font-weight:600;">Good Equilibrium</span>
+      </div>
     </div>
-  </div>
 
-  <div class="disclaimer-box">
-    <strong>MEDICAL DISCLAIMER NOTICE:</strong><br/>
-    This digital vital assessment report is produced via non-invasive optical facial photoplethysmography (rPPG) through Nhealth Vital Lens for wellness tracking and preliminary assessment purposes only. It is not an FDA/clinical diagnostic medical device and does not substitute professional medical diagnosis, prescription, or clinical consultation. For any health concerns or symptoms, please consult a registered medical practitioner or book an official Nhealth physician.
-  </div>
+    <div class="disclaimer-box">
+      <strong>MEDICAL DISCLAIMER NOTICE:</strong><br/>
+      This digital vital assessment report is produced for wellness tracking and preliminary assessment purposes only. It is not an FDA/clinical diagnostic medical device and does not substitute professional medical diagnosis, prescription, or clinical consultation. For any health concerns or symptoms, please consult a registered medical practitioner or book an official Nhealth physician.
+    </div>
 
-  <div class="footer">
-    Nhealth Unified Healthcare Technologies Private Limited • Andhra Pradesh, India • support@nhealth.in • Helpline: +91 9393934621
+    <div class="footer">
+      Nhealth • Healthcare at Home • Andhra Pradesh, India • support@nhealth.in • Helpline: +91 9393934621
+    </div>
   </div>
 </body>
 </html>
@@ -347,25 +417,47 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     await startCamera(cameraFacingMode);
   };
 
-  // Simulated Scanning Progress Loop
+  // Simulated Scanning Progress Loop (Exact 20 seconds duration)
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isOpen && step === 'scanning') {
-      const interval = 120;
+      const interval = 100;
+      const stepIncrement = 0.5; // 0.5% per 100ms = exactly 20,000ms (20 seconds)
       timer = setInterval(() => {
         setProgress((prev) => {
-          const next = prev + 1.2;
+          const next = prev + stepIncrement;
           if (next >= 100) {
             clearInterval(timer);
             setStep('completed');
             stopCamera();
+            const record = {
+              id: `REC-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 899 + 100)}`,
+              fullName: patientInfo.fullName || 'Anonymous Patient',
+              phone: patientInfo.phone || 'N/A',
+              city: patientInfo.city || 'N/A',
+              gender: patientInfo.gender || 'Other',
+              heartRate: liveVitals.heartRate,
+              spo2: liveVitals.spo2,
+              respiratoryRate: liveVitals.respiratoryRate,
+              stressLevel: liveVitals.stressLevel,
+              stressScore: liveVitals.stressScore,
+              hrv: liveVitals.hrv,
+              timestamp: liveVitals.timestamp,
+              createdAt: Date.now()
+            };
+            try {
+              const existing = JSON.parse(localStorage.getItem('nhealth_vitals_records') || '[]');
+              localStorage.setItem('nhealth_vitals_records', JSON.stringify([record, ...existing]));
+            } catch (err) {
+              console.error(err);
+            }
             if (onScanComplete) {
-              onScanComplete(liveVitals);
+              onScanComplete(liveVitals, patientInfo);
             }
             return 100;
           }
 
-          // Dynamic status updates based on progress
+          // Dynamic status updates based on progress (smoothly calibrated for 20s)
           if (next < 25) {
             setScanStatus('Aligning face within optical frame...');
           } else if (next < 50) {
@@ -413,18 +505,15 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       <div className="relative w-full max-w-xl bg-[#0b192c] border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-slate-100 max-h-[92vh]">
         {/* Header Bar */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-800/80 bg-slate-900/60">
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             <img
               src="https://i.ibb.co/JW6HFRV0/Nhealth-logo-8cm-x-8cm-high-quality-1-1.png"
               alt="Nhealth Logo"
-              className="h-7 w-7 sm:h-8 sm:w-8 object-contain rounded-lg shrink-0 border border-slate-700/60 bg-white/10 p-0.5 shadow-sm"
+              className="h-9 w-9 sm:h-10 sm:w-10 object-contain rounded-xl shrink-0 border border-slate-700/60 bg-white/10 p-1 shadow-md"
             />
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-purple-600/30 border border-purple-500/40 text-purple-400 flex items-center justify-center shadow-inner shrink-0">
-              <Heart className="w-4 h-4 fill-purple-400 text-purple-400" />
-            </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                <h3 className="font-extrabold text-sm sm:text-lg text-white tracking-tight">
+                <h3 className="font-extrabold text-base sm:text-lg text-white tracking-tight">
                   Nhealth <span className="text-purple-400">Vital Lens</span>
                 </h3>
                 <span className="text-[9px] sm:text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-purple-950/80 text-purple-300 border border-purple-800/50 shrink-0">
@@ -436,7 +525,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           </div>
           <button
             onClick={handleModalClose}
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-2"
+            className="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 ml-2"
             aria-label="Close Vital Lens"
           >
             <X className="w-4 h-4" />
@@ -445,9 +534,156 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
         {/* Modal Body Container */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5">
+          {/* STEP 0: Mandatory Patient Pre-Scan Registration Form */}
+          {step === 'details' && (
+            <form onSubmit={handleDetailsSubmit} className="space-y-4">
+              <div className="text-center space-y-1.5 py-1">
+                <div className="w-12 h-12 rounded-2xl bg-purple-900/30 border border-purple-500/40 text-purple-300 flex items-center justify-center mx-auto shadow-md shadow-purple-900/30">
+                  <User className="w-6 h-6 text-purple-400" />
+                </div>
+                <h4 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                  Patient Pre-Scan Information
+                </h4>
+                <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
+                  Please provide the required details below to unlock the optical sensor and calibrate your personalized vital report.
+                </p>
+              </div>
+
+              {formError && (
+                <div className="bg-rose-950/60 border border-rose-800/70 text-rose-300 px-3.5 py-2 rounded-xl text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3.5">
+                {/* Full Name */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Full Name <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={patientInfo.fullName}
+                      onChange={(e) => {
+                        setPatientInfo({ ...patientInfo, fullName: e.target.value });
+                        if (formError) setFormError(null);
+                      }}
+                      placeholder="e.g. Ramesh Kumar"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm bg-slate-950/70 border border-slate-700/80 rounded-xl focus:outline-none focus:border-purple-500 text-white placeholder-slate-500 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {/* Phone Number */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Phone Number <span className="text-rose-400">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-medium text-slate-400 border-r border-slate-700 pr-2">
+                        <Phone className="w-3.5 h-3.5 text-slate-400" />
+                        <span>+91</span>
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        maxLength={10}
+                        value={patientInfo.phone}
+                        onChange={(e) => {
+                          setPatientInfo({ ...patientInfo, phone: e.target.value.replace(/\D/g, '') });
+                          if (formError) setFormError(null);
+                        }}
+                        placeholder="9876543210"
+                        className="w-full pl-20 pr-3 py-2.5 text-xs sm:text-sm bg-slate-950/70 border border-slate-700/80 rounded-xl focus:outline-none focus:border-purple-500 text-white placeholder-slate-500 transition-colors"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Gender */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Gender <span className="text-rose-400">*</span>
+                    </label>
+                    <select
+                      required
+                      value={patientInfo.gender}
+                      onChange={(e) => {
+                        setPatientInfo({ ...patientInfo, gender: e.target.value });
+                        if (formError) setFormError(null);
+                      }}
+                      className="w-full px-3 py-2.5 text-xs sm:text-sm bg-slate-950/70 border border-slate-700/80 rounded-xl focus:outline-none focus:border-purple-500 text-white transition-colors cursor-pointer"
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* City */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    City <span className="text-rose-400">*</span>
+                  </label>
+                  <div className="relative">
+                    <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={patientInfo.city}
+                      onChange={(e) => {
+                        setPatientInfo({ ...patientInfo, city: e.target.value });
+                        if (formError) setFormError(null);
+                      }}
+                      placeholder="e.g. Visakhapatnam / Vijayawada"
+                      className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm bg-slate-950/70 border border-slate-700/80 rounded-xl focus:outline-none focus:border-purple-500 text-white placeholder-slate-500 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-1 flex flex-col sm:flex-row gap-2.5">
+                <button
+                  type="submit"
+                  className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-[0.98] text-white font-bold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Proceed to Camera & Scan</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleModalClose}
+                  className="py-3 px-5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs sm:text-sm rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
           {/* STEP 1: Consent & Privacy Agreement Screen */}
           {step === 'consent' && (
-            <div className="space-y-5">
+            <div className="space-y-4">
+              {/* Patient Badge */}
+              <div className="flex items-center justify-between bg-slate-900/80 border border-slate-800 px-3.5 py-2.5 rounded-xl text-xs text-slate-300">
+                <div className="flex items-center gap-2">
+                  <User className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                  <span>Patient: <strong className="text-white">{patientInfo.fullName}</strong> ({patientInfo.gender}, {patientInfo.city})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStep('details')}
+                  className="text-purple-400 hover:text-purple-300 text-[11px] font-semibold underline cursor-pointer"
+                >
+                  Edit
+                </button>
+              </div>
               <div className="text-center space-y-2 py-2">
                 <div className="w-16 h-16 rounded-2xl bg-purple-900/30 border border-purple-500/40 text-purple-300 flex items-center justify-center mx-auto shadow-lg shadow-purple-900/30">
                   <Sparkles className="w-8 h-8 animate-pulse text-purple-400" />
@@ -456,7 +692,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                   Instant Non-Invasive Vitals Check
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-300 max-w-md mx-auto leading-relaxed">
-                  Hold your face in the camera view for 15 seconds. Our computer vision model measures subtle micro-vascular blood pulse variations across your facial capillaries.
+                  Hold your face in the camera view for 20 seconds. Our computer vision model measures subtle micro-vascular blood pulse variations across your facial capillaries.
                 </p>
               </div>
 
@@ -707,6 +943,12 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                 <p className="text-xs text-slate-300">
                   Estimated via Nhealth Optical Vision. Timestamp: {liveVitals.timestamp}
                 </p>
+              </div>
+
+              {/* Patient Profile Chip */}
+              <div className="flex items-center justify-between bg-slate-900/80 border border-slate-800 px-3.5 py-2 rounded-xl text-xs text-slate-300">
+                <span>Patient: <strong className="text-white">{patientInfo.fullName}</strong> ({patientInfo.gender}, {patientInfo.city})</span>
+                <span className="text-slate-400 font-mono text-[11px]">+91 {patientInfo.phone}</span>
               </div>
 
               {/* Vitals Summary Grid */}
