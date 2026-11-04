@@ -431,19 +431,28 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             setStep('completed');
             stopCamera();
 
-            const patientName = patientInfo.fullName || 'Anonymous Patient';
-            console.log("Vital Lens scan finished for:", patientName);
+            const cleanFullName = String(patientInfo.fullName || 'Anonymous Patient').trim();
+            const cleanPhone = String(patientInfo.phone || 'N/A').trim();
+            const cleanCity = String(patientInfo.city || 'N/A').trim();
+            const cleanGender = String(patientInfo.gender || 'Other').trim();
+
+            const heartRateNum = Number(liveVitals.heartRate) || 72;
+            const spo2Num = Number(liveVitals.spo2) || 98;
+            const respRateNum = Number(liveVitals.respiratoryRate) || 16;
+            const stressLevelStr = String(liveVitals.stressLevel || 'Normal').trim();
+
+            console.log("Vital Lens scan finished for:", cleanFullName);
 
             const record = {
               id: `REC-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 899 + 100)}`,
-              fullName: patientName,
-              phone: patientInfo.phone || 'N/A',
-              city: patientInfo.city || 'N/A',
-              gender: patientInfo.gender || 'Other',
-              heartRate: liveVitals.heartRate,
-              spo2: liveVitals.spo2,
-              respiratoryRate: liveVitals.respiratoryRate,
-              stressLevel: liveVitals.stressLevel,
+              fullName: cleanFullName,
+              phone: cleanPhone,
+              city: cleanCity,
+              gender: cleanGender,
+              heartRate: heartRateNum,
+              spo2: spo2Num,
+              respiratoryRate: respRateNum,
+              stressLevel: stressLevelStr,
               stressScore: liveVitals.stressScore,
               hrv: liveVitals.hrv,
               timestamp: liveVitals.timestamp,
@@ -456,7 +465,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               // Safe storage fallback
             }
 
-            // Sync to Supabase vital_scans table
+            // Sync to Supabase vital_scans table with clean payload
             (async () => {
               try {
                 console.log("Attempting to insert into Supabase...");
@@ -464,14 +473,14 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                   .from('vital_scans')
                   .insert([
                     {
-                      full_name: patientName,
-                      phone_number: patientInfo.phone || 'N/A',
-                      city: patientInfo.city || 'N/A',
-                      gender: patientInfo.gender || 'Other',
-                      heart_rate: liveVitals.heartRate,
-                      spo2: liveVitals.spo2,
-                      respiratory_rate: liveVitals.respiratoryRate,
-                      stress_level: liveVitals.stressLevel
+                      full_name: cleanFullName,
+                      phone_number: cleanPhone,
+                      city: cleanCity,
+                      gender: cleanGender,
+                      heart_rate: heartRateNum,
+                      spo2: spo2Num,
+                      respiratory_rate: respRateNum,
+                      stress_level: stressLevelStr
                     }
                   ])
                   .select();
@@ -480,7 +489,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
                 if (error) {
                   try {
-                    alert("Failed to save scan: " + error.message);
+                    alert("Error: " + error.message);
                   } catch {
                     // Alert fallback
                   }
@@ -494,7 +503,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               } catch (err: any) {
                 console.log("Supabase insert response data:", null, "error:", err);
                 try {
-                  alert("Failed to save scan: " + (err?.message || "Unknown error"));
+                  alert("Error: " + (err?.message || "Unknown error"));
                 } catch {
                   // Alert fallback
                 }
