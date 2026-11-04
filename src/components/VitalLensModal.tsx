@@ -495,7 +495,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                   }
                 } else {
                   try {
-                    alert("Scan saved successfully!");
+                    alert("Vital Lens Scan Saved Successfully!");
                   } catch {
                     // Alert fallback
                   }
