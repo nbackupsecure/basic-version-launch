@@ -75,36 +75,34 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
   const fetchRecords = async () => {
     setIsLoading(true);
     try {
-      if (isSupabaseConfigured) {
-        const { data, error } = await supabase
-          .from('vital_scans')
-          .select('*')
-          .order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('vital_scans')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data)) {
-          const mapped: PatientVitalRecord[] = data.map((d: any) => ({
-            id: String(d.id),
-            fullName: d.full_name || 'N/A',
-            phone: d.phone_number || d.phone || 'N/A',
-            city: d.city || 'N/A',
-            gender: d.gender || 'Other',
-            heartRate: Number(d.heart_rate || 72),
-            spo2: Number(d.spo2 || 98),
-            respiratoryRate: Number(d.respiratory_rate || 16),
-            stressLevel: d.stress_level || 'Normal',
-            stressScore: Number(d.stress_score || 20),
-            hrv: Number(d.hrv || 50),
-            timestamp: d.created_at ? new Date(d.created_at).toLocaleTimeString() : new Date().toLocaleTimeString(),
-            createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
-          }));
-          setRecords(mapped);
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
-          } catch {
-            // safe storage boundary
-          }
-          return;
+      if (!error && Array.isArray(data)) {
+        const mapped: PatientVitalRecord[] = data.map((d: any) => ({
+          id: String(d.id),
+          fullName: d.full_name || 'N/A',
+          phone: d.phone_number || d.phone || 'N/A',
+          city: d.city || 'N/A',
+          gender: d.gender || 'Other',
+          heartRate: Number(d.heart_rate || 72),
+          spo2: Number(d.spo2 || 98),
+          respiratoryRate: Number(d.respiratory_rate || 16),
+          stressLevel: d.stress_level || 'Normal',
+          stressScore: Number(d.stress_score || 20),
+          hrv: Number(d.hrv || 50),
+          timestamp: d.created_at ? new Date(d.created_at).toLocaleTimeString() : new Date().toLocaleTimeString(),
+          createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
+        }));
+        setRecords(mapped);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(mapped));
+        } catch {
+          // safe storage boundary
         }
+        return;
       }
     } catch {
       // Safe fallback if Supabase is offline
@@ -128,10 +126,9 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
     }
   };
 
+  // Automatically fetch on page load and auth status changes
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchRecords();
-    }
+    fetchRecords();
   }, [isAuthenticated]);
 
   const handleLogin = async (e: React.FormEvent) => {

@@ -430,9 +430,13 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             clearInterval(timer);
             setStep('completed');
             stopCamera();
+
+            const patientName = patientInfo.fullName || 'Anonymous Patient';
+            console.log("Vital Lens scan finished for:", patientName);
+
             const record = {
               id: `REC-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 899 + 100)}`,
-              fullName: patientInfo.fullName || 'Anonymous Patient',
+              fullName: patientName,
               phone: patientInfo.phone || 'N/A',
               city: patientInfo.city || 'N/A',
               gender: patientInfo.gender || 'Other',
@@ -453,28 +457,49 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             }
 
             // Sync to Supabase vital_scans table
-            if (isSupabaseConfigured) {
-              (async () => {
-                try {
-                  await supabase.from('vital_scans').insert([
+            (async () => {
+              try {
+                console.log("Attempting to insert into Supabase...");
+                const { data, error } = await supabase
+                  .from('vital_scans')
+                  .insert([
                     {
-                      full_name: patientInfo.fullName || 'Anonymous Patient',
+                      full_name: patientName,
                       phone_number: patientInfo.phone || 'N/A',
                       city: patientInfo.city || 'N/A',
                       gender: patientInfo.gender || 'Other',
                       heart_rate: liveVitals.heartRate,
                       spo2: liveVitals.spo2,
                       respiratory_rate: liveVitals.respiratoryRate,
-                      stress_level: liveVitals.stressLevel,
-                      stress_score: liveVitals.stressScore,
-                      hrv: liveVitals.hrv
+                      stress_level: liveVitals.stressLevel
                     }
-                  ]);
-                } catch {
-                  // Safe fallback
+                  ])
+                  .select();
+
+                console.log("Supabase insert response data:", data, "error:", error);
+
+                if (error) {
+                  try {
+                    alert("Failed to save scan: " + error.message);
+                  } catch {
+                    // Alert fallback
+                  }
+                } else {
+                  try {
+                    alert("Scan saved successfully!");
+                  } catch {
+                    // Alert fallback
+                  }
                 }
-              })();
-            }
+              } catch (err: any) {
+                console.log("Supabase insert response data:", null, "error:", err);
+                try {
+                  alert("Failed to save scan: " + (err?.message || "Unknown error"));
+                } catch {
+                  // Alert fallback
+                }
+              }
+            })();
 
             if (onScanComplete) {
               onScanComplete(liveVitals, patientInfo);

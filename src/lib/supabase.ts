@@ -1,12 +1,25 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+// Direct constants fallback as requested:
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "మీ_SUPABASE_PROJECT_URL";
+export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "మీ_SUPABASE_ANON_KEY";
+
+const isValidUrl = (url: string) => {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
 
 export const isSupabaseConfigured = Boolean(
-  import.meta.env.VITE_SUPABASE_URL &&
-  import.meta.env.VITE_SUPABASE_ANON_KEY &&
-  !import.meta.env.VITE_SUPABASE_URL.includes('placeholder')
+  isValidUrl(SUPABASE_URL) &&
+  SUPABASE_ANON_KEY &&
+  !SUPABASE_URL.includes('placeholder')
 );
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  isValidUrl(SUPABASE_URL) ? SUPABASE_URL : 'https://placeholder.supabase.co',
+  SUPABASE_ANON_KEY
+);
