@@ -13,7 +13,10 @@ import {
   LogOut,
   FileText,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Phone,
+  PlusCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -71,6 +74,14 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
 
+  // Scan Limit Manager state
+  const [topUpPhone, setTopUpPhone] = useState('');
+  const [topUpScans, setTopUpScans] = useState<number>(5);
+  const [isSavingLimit, setIsSavingLimit] = useState(false);
+  const [limitToast, setLimitToast] = useState<string | null>(null);
+  const [limitError, setLimitError] = useState<string | null>(null);
+  const [activeLimits, setActiveLimits] = useState<Array<{ phone: string; bonus: number; updatedAt?: string }>>([]);
+
   // Fetch records dynamically from Supabase vital_scans table or local cache
   const fetchRecords = async () => {
     setIsLoading(true);
@@ -126,10 +137,112 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
     }
   };
 
-  // Automatically fetch on page load and auth status changes
+  // Fetch top-up limits dynamically from Supabase scan_limits or local cache
+  const fetchLimits = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('scan_limits')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (!error && Array.isArray(data)) {
+        setActiveLimits(data.map((d: any) => ({
+          phone: String(d.phone_number || ''),
+          bonus: Number(d.bonus_scans || 0),
+          updatedAt: d.updated_at
+        })));
+        return;
+      }
+    } catch {
+      // Fallback
+    }
+
+    try {
+      const localLimits = JSON.parse(localStorage.getItem('nhealth_scan_limits') || '{}');
+      setActiveLimits(Object.entries(localLimits).map(([phone, bonus]) => ({
+        phone,
+        bonus: Number(bonus)
+      })));
+    } catch {
+      setActiveLimits([]);
+    }
+  };
+
+  // Automatically fetch records & scan limits on page load and auth changes
   useEffect(() => {
     fetchRecords();
+    fetchLimits();
   }, [isAuthenticated]);
+
+  const handleAddScans = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = topUpPhone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      setLimitError('Please enter a valid 10-digit phone number.');
+      return;
+    }
+    const additional = Number(topUpScans);
+    if (isNaN(additional) || additional <= 0) {
+      setLimitError('Please enter a positive number of scans.');
+      return;
+    }
+
+    setLimitError(null);
+    setIsSavingLimit(true);
+
+    try {
+      let currentBonus = 0;
+      try {
+        const { data: existing } = await supabase
+          .from('scan_limits')
+          .select('bonus_scans')
+          .ilike('phone_number', `%${cleanPhone}%`)
+          .maybeSingle();
+
+        if (existing && existing.bonus_scans !== undefined && existing.bonus_scans !== null) {
+          currentBonus = Number(existing.bonus_scans) || 0;
+        } else {
+          const localLimits = JSON.parse(localStorage.getItem('nhealth_scan_limits') || '{}');
+          currentBonus = Number(localLimits[cleanPhone]) || 0;
+        }
+      } catch {
+        const localLimits = JSON.parse(localStorage.getItem('nhealth_scan_limits') || '{}');
+        currentBonus = Number(localLimits[cleanPhone]) || 0;
+      }
+
+      const newBonus = currentBonus + additional;
+
+      // Upsert into scan_limits table
+      try {
+        await supabase
+          .from('scan_limits')
+          .upsert({
+            phone_number: cleanPhone,
+            bonus_scans: newBonus,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'phone_number' });
+      } catch {
+        // Safe database error boundary
+      }
+
+      // Sync local storage cache
+      try {
+        const localLimits = JSON.parse(localStorage.getItem('nhealth_scan_limits') || '{}');
+        localLimits[cleanPhone] = newBonus;
+        localStorage.setItem('nhealth_scan_limits', JSON.stringify(localLimits));
+      } catch {}
+
+      setLimitToast(`Successfully added ${additional} extra scans for ${cleanPhone}`);
+      setTopUpPhone('');
+      setTopUpScans(5);
+      fetchLimits();
+      setTimeout(() => setLimitToast(null), 5000);
+    } catch (err: any) {
+      setLimitError(err?.message || 'Failed to update scan limits');
+    } finally {
+      setIsSavingLimit(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -586,6 +699,108 @@ export const AdminCommandCenter: React.FC<AdminCommandCenterProps> = ({ onBackTo
             </div>
             <div className="text-[11px] text-slate-400 mt-1">Breaths per minute</div>
           </div>
+        </div>
+
+        {/* Section: Scan Limit Manager */}
+        <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-white tracking-tight">Scan Limit Manager</h2>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-950/80 text-amber-300 border border-amber-700/50">
+                  Base: 9 Free Scans
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Top up and grant extra Vital Lens scans for specific patient phone numbers.
+              </p>
+            </div>
+            {limitToast && (
+              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-3.5 py-2 rounded-xl animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{limitToast}</span>
+              </div>
+            )}
+          </div>
+
+          {limitError && (
+            <div className="p-3 bg-rose-950/60 border border-rose-800/80 rounded-xl text-xs text-rose-300 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+              <span>{limitError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleAddScans} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+            <div className="sm:col-span-5">
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Patient Phone Number
+              </label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-xs font-medium text-slate-400 border-r border-slate-700 pr-2">
+                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                  <span>+91</span>
+                </div>
+                <input
+                  type="tel"
+                  required
+                  maxLength={10}
+                  value={topUpPhone}
+                  onChange={(e) => {
+                    setTopUpPhone(e.target.value.replace(/\D/g, ''));
+                    if (limitError) setLimitError(null);
+                  }}
+                  placeholder="9876543210"
+                  className="w-full pl-20 pr-3 py-2.5 text-xs sm:text-sm bg-slate-950/70 border border-slate-700 rounded-xl focus:outline-none focus:border-purple-500 text-white placeholder-slate-500"
+                />
+              </div>
+            </div>
+
+            <div className="sm:col-span-4">
+              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Additional Scans to Add
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                required
+                value={topUpScans}
+                onChange={(e) => setTopUpScans(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full px-3 py-2.5 text-xs sm:text-sm bg-slate-950/70 border border-slate-700 rounded-xl focus:outline-none focus:border-purple-500 text-white"
+              />
+            </div>
+
+            <div className="sm:col-span-3">
+              <button
+                type="submit"
+                disabled={isSavingLimit}
+                className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>{isSavingLimit ? 'Saving...' : 'Save / Add Scans'}</span>
+              </button>
+            </div>
+          </form>
+
+          {activeLimits.length > 0 && (
+            <div className="pt-2 border-t border-slate-800/80">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-2">
+                Active Phone Top-ups:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {activeLimits.map((l) => (
+                  <div
+                    key={l.phone}
+                    className="px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-800 text-xs flex items-center gap-2"
+                  >
+                    <span className="font-mono text-slate-300">+91 {l.phone}</span>
+                    <span className="text-amber-400 font-bold text-[11px]">+{l.bonus} bonus</span>
+                    <span className="text-[10px] text-slate-500">(Total: {9 + l.bonus})</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Section: Vitals Scan Details */}

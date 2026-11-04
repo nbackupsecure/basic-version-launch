@@ -94,8 +94,12 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     onClose();
   };
 
-  // Form submission handler for pre-scan details
-  const handleDetailsSubmit = (e: React.FormEvent) => {
+  const [isCheckingLimit, setIsCheckingLimit] = useState<boolean>(false);
+  const [limitExceededModal, setLimitExceededModal] = useState<boolean>(false);
+  const [scanLimitStats, setScanLimitStats] = useState<{ used: number; allowed: number } | null>(null);
+
+  // Form submission handler for pre-scan details with Phone Scan Limit Check
+  const handleDetailsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!patientInfo.fullName.trim()) {
       setFormError('Please enter your full name.');
@@ -111,7 +115,71 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       return;
     }
     setFormError(null);
-    setStep('consent');
+    setIsCheckingLimit(true);
+
+    try {
+      let successfulScans = 0;
+      let bonusScans = 0;
+
+      // a. Count completed successful scans from vital_scans table
+      try {
+        const { count, error } = await supabase
+          .from('vital_scans')
+          .select('*', { count: 'exact', head: true })
+          .ilike('phone_number', `%${cleanPhone}%`);
+
+        if (!error && typeof count === 'number') {
+          successfulScans = count;
+        } else {
+          const localRecords = JSON.parse(localStorage.getItem('nhealth_vitals_records') || '[]');
+          successfulScans = localRecords.filter((r: any) =>
+            String(r.phone || '').replace(/\D/g, '').includes(cleanPhone)
+          ).length;
+        }
+      } catch {
+        const localRecords = JSON.parse(localStorage.getItem('nhealth_vitals_records') || '[]');
+        successfulScans = localRecords.filter((r: any) =>
+          String(r.phone || '').replace(/\D/g, '').includes(cleanPhone)
+        ).length;
+      }
+
+      // b. Check scan_limits table for bonus_scans added by Admin
+      try {
+        const { data: limitData } = await supabase
+          .from('scan_limits')
+          .select('bonus_scans')
+          .ilike('phone_number', `%${cleanPhone}%`)
+          .maybeSingle();
+
+        if (limitData && limitData.bonus_scans !== undefined && limitData.bonus_scans !== null) {
+          bonusScans = Number(limitData.bonus_scans) || 0;
+        } else {
+          const localLimits = JSON.parse(localStorage.getItem('nhealth_scan_limits') || '{}');
+          bonusScans = Number(localLimits[cleanPhone]) || 0;
+        }
+      } catch {
+        const localLimits = JSON.parse(localStorage.getItem('nhealth_scan_limits') || '{}');
+        bonusScans = Number(localLimits[cleanPhone]) || 0;
+      }
+
+      // c. Allowed Scans = 9 (Base Limit) + bonus_scans
+      const allowedScans = 9 + bonusScans;
+      setScanLimitStats({ used: successfulScans, allowed: allowedScans });
+
+      // d. If (successful_scans >= Allowed Scans), block the scan immediately
+      if (successfulScans >= allowedScans) {
+        setLimitExceededModal(true);
+        setIsCheckingLimit(false);
+        return;
+      }
+
+      // e. Only proceed with the 20-second camera scan if the user has remaining scans
+      setStep('consent');
+    } catch {
+      setStep('consent');
+    } finally {
+      setIsCheckingLimit(false);
+    }
   };
 
   // Generate & Download Printable PDF Vital Report Card
@@ -710,9 +778,10 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               <div className="pt-1 flex flex-col sm:flex-row gap-2.5">
                 <button
                   type="submit"
-                  className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-[0.98] text-white font-bold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2 cursor-pointer"
+                  disabled={isCheckingLimit}
+                  className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-60 active:scale-[0.98] text-white font-bold text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-purple-600/30 flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>Proceed to Camera & Scan</span>
+                  <span>{isCheckingLimit ? 'Verifying Free Scans...' : 'Proceed to Camera & Scan'}</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
                 <button
@@ -1090,6 +1159,57 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Free Scan Limit Exceeded Modal Popup */}
+      {limitExceededModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-[#0b192c] border border-amber-500/40 rounded-3xl p-6 text-center space-y-4 shadow-2xl relative">
+            <button
+              onClick={() => setLimitExceededModal(false)}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/20">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xl font-black text-white tracking-tight">Free Scan Limit Reached</h4>
+              <div className="text-sm font-semibold text-amber-200 bg-amber-950/60 border border-amber-700/60 rounded-2xl p-4 leading-relaxed">
+                You are out of free scans. To get more scans contact 9393934621 Nhealth team
+              </div>
+              {scanLimitStats && (
+                <p className="text-xs text-slate-400 pt-1">
+                  Completed: <span className="font-bold text-white">{scanLimitStats.used}</span> / Allowed: <span className="font-bold text-purple-300">{scanLimitStats.allowed}</span> scans
+                </p>
+              )}
+            </div>
+
+            <div className="pt-2 flex flex-col gap-2.5">
+              <a
+                href={`https://wa.me/919393934621?text=${encodeURIComponent(
+                  `Hello Nhealth Team, I have reached the free scan limit for mobile +91 ${patientInfo.phone}. Please help me add more scans.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3 px-4 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold text-xs sm:text-sm rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <span>WhatsApp Nhealth Team (+91 9393934621)</span>
+              </a>
+              <a
+                href="tel:+919393934621"
+                className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Phone className="w-3.5 h-3.5 text-blue-400" />
+                <span>Call Helpline (+91 9393934621)</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
