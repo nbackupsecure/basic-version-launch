@@ -15,7 +15,6 @@ import {
   Calendar,
   Clock,
   Sparkles,
-  Rocket,
   Car,
   Mail,
   Heart
@@ -362,13 +361,18 @@ export default function App() {
             {/* Left Column */}
             <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
               {/* Launch Announcement Alert */}
-              <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-50/95 border border-blue-200/90 shadow-xs flex items-start sm:items-center gap-3.5 text-left">
-                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/20">
-                  <Rocket className="w-4 h-4 text-white" />
-                </div>
-                <div className="flex-1 text-xs sm:text-sm text-slate-700 leading-relaxed font-normal">
-                  <span className="font-bold text-blue-950 block sm:inline sm:mr-1.5">Launch Announcement:</span>
-                  The fully automated Nhealth application will be launching shortly. To ensure uninterrupted care in the meantime, we have introduced this initial version to serve you better.
+              <div className="relative p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-gradient-to-br from-blue-50/95 via-sky-50/80 to-teal-50/90 border-2 border-blue-400/90 shadow-lg shadow-blue-500/10 animate-launch-glow animate-entrance transition-all text-left max-w-2xl mx-auto lg:mx-0">
+                <div className="flex flex-col items-start gap-2.5">
+                  {/* Prominent Pill Badge */}
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white text-[11px] sm:text-xs font-black uppercase tracking-wider shadow-sm shadow-blue-600/30">
+                    <span>📢</span>
+                    <span>LAUNCH ANNOUNCEMENT</span>
+                  </span>
+
+                  {/* Text Content */}
+                  <p className="text-xs sm:text-sm text-slate-800 leading-relaxed font-normal">
+                    <strong className="font-bold text-blue-950">Launch Announcement:</strong> The fully automated Nhealth application will be launching shortly. To ensure uninterrupted care in the meantime, we have introduced this initial version to serve you better.
+                  </p>
                 </div>
               </div>
 
