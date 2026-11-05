@@ -15,7 +15,8 @@ import {
   Download,
   User,
   MapPin,
-  Phone
+  Phone,
+  AlertTriangle
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
@@ -74,6 +75,14 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const detectorRef = useRef<any>(null);
+  const isFaceDetectedRef = useRef<boolean>(true);
+  const faceMissCountRef = useRef<number>(0);
+
+  // Real-time Face Detection state
+  const [isFaceDetected, setIsFaceDetected] = useState<boolean>(true);
+  const [faceWarning, setFaceWarning] = useState<string | null>(null);
 
   // Stop camera helper
   const stopCamera = () => {
@@ -482,16 +491,131 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
   const startScan = async () => {
     setStep('scanning');
     setProgress(0);
+    setIsFaceDetected(true);
+    isFaceDetectedRef.current = true;
+    setFaceWarning(null);
+    faceMissCountRef.current = 0;
     await startCamera(cameraFacingMode);
   };
 
-  // Simulated Scanning Progress Loop (Exact 20 seconds duration)
+  // Face Detection check function: Uses native FaceDetector API when available,
+  // with fallback to canvas skin-chrominance analysis on the central face target oval.
+  const checkFaceInFrame = async (): Promise<boolean> => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      return true; // Not ready yet, do not falsely trigger missing face
+    }
+
+    // 1. Try Native FaceDetector API (available in modern Chromium / Edge / Android WebView)
+    try {
+      if (!detectorRef.current && typeof (window as any).FaceDetector === 'function') {
+        detectorRef.current = new (window as any).FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+      }
+      if (detectorRef.current) {
+        const faces = await detectorRef.current.detect(video);
+        if (Array.isArray(faces)) {
+          return faces.length > 0;
+        }
+      }
+    } catch {
+      // Fallback to canvas chrominance analysis below
+    }
+
+    // 2. High-speed canvas-based skin chrominance (YCbCr) analysis
+    try {
+      if (!canvasRef.current) {
+        canvasRef.current = document.createElement('canvas');
+        canvasRef.current.width = 64;
+        canvasRef.current.height = 48;
+      }
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return true;
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+      // Sample central 60% region where the face guide oval is positioned
+      let skinPixels = 0;
+      let totalSampled = 0;
+      const startX = Math.floor(canvas.width * 0.2);
+      const endX = Math.floor(canvas.width * 0.8);
+      const startY = Math.floor(canvas.height * 0.2);
+      const endY = Math.floor(canvas.height * 0.8);
+
+      for (let y = startY; y < endY; y += 2) {
+        for (let x = startX; x < endX; x += 2) {
+          const idx = (y * canvas.width + x) * 4;
+          const r = imgData[idx];
+          const g = imgData[idx + 1];
+          const b = imgData[idx + 2];
+
+          totalSampled++;
+          // Standard skin chrominance bounds (YCbCr color space)
+          const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+          const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+
+          if (cr >= 130 && cr <= 178 && cb >= 75 && cb <= 132 && r > g && g > b) {
+            skinPixels++;
+          }
+        }
+      }
+
+      // If at least 9% of central pixels match human face skin tones, face is present
+      const skinRatio = totalSampled > 0 ? skinPixels / totalSampled : 0;
+      return skinRatio >= 0.09;
+    } catch {
+      return true;
+    }
+  };
+
+  // Continuous Face Detection Loop during active scan (checks every 250ms)
+  useEffect(() => {
+    let faceCheckTimer: NodeJS.Timeout;
+    if (isOpen && step === 'scanning' && cameraActive) {
+      faceCheckTimer = setInterval(async () => {
+        const detected = await checkFaceInFrame();
+        if (detected) {
+          faceMissCountRef.current = 0;
+          if (!isFaceDetectedRef.current) {
+            isFaceDetectedRef.current = true;
+            setIsFaceDetected(true);
+            setFaceWarning(null);
+          }
+        } else {
+          faceMissCountRef.current += 1;
+          // Debounce 2 consecutive misses (~500ms) to prevent flicker
+          if (faceMissCountRef.current >= 2 && isFaceDetectedRef.current) {
+            isFaceDetectedRef.current = false;
+            setIsFaceDetected(false);
+            setFaceWarning('⚠️ No face detected. Please position your face in front of the camera to continue.');
+          }
+        }
+      }, 250);
+    } else {
+      setIsFaceDetected(true);
+      isFaceDetectedRef.current = true;
+      setFaceWarning(null);
+      faceMissCountRef.current = 0;
+    }
+
+    return () => {
+      if (faceCheckTimer) clearInterval(faceCheckTimer);
+    };
+  }, [isOpen, step, cameraActive]);
+
+  // Simulated Scanning Progress Loop (Exact 20 seconds duration with Auto Pause / Resume)
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isOpen && step === 'scanning') {
       const interval = 100;
       const stepIncrement = 0.5; // 0.5% per 100ms = exactly 20,000ms (20 seconds)
       timer = setInterval(() => {
+        // Pause timer and vital calculation if no face is detected
+        if (!isFaceDetectedRef.current) {
+          return;
+        }
+
         setProgress((prev) => {
           const next = prev + stepIncrement;
           if (next >= 100) {
@@ -963,29 +1087,79 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
                 {/* Face Alignment Overlay Circle */}
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className="relative w-48 h-56 sm:w-56 sm:h-64 rounded-[45%] border-2 border-dashed border-purple-400/80 shadow-[0_0_30px_rgba(168,85,247,0.3)] animate-pulse flex items-center justify-center">
+                  <div
+                    className={`relative w-48 h-56 sm:w-56 sm:h-64 rounded-[45%] border-2 border-dashed transition-colors duration-300 flex items-center justify-center ${
+                      isFaceDetected
+                        ? 'border-purple-400/80 shadow-[0_0_30px_rgba(168,85,247,0.3)] animate-pulse'
+                        : 'border-rose-500 shadow-[0_0_35px_rgba(244,63,94,0.5)]'
+                    }`}
+                  >
                     {/* Corner Guides */}
-                    <div className="absolute top-2 w-6 h-1 bg-purple-400/80 rounded-full"></div>
-                    <div className="absolute bottom-2 w-6 h-1 bg-purple-400/80 rounded-full"></div>
-                    <div className="absolute left-2 h-6 w-1 bg-purple-400/80 rounded-full"></div>
-                    <div className="absolute right-2 h-6 w-1 bg-purple-400/80 rounded-full"></div>
-
-                    {/* Laser Scanning Sweep Line */}
                     <div
-                      className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee] transition-all duration-300"
-                      style={{ top: `${(progress % 100)}%` }}
-                    />
+                      className={`absolute top-2 w-6 h-1 rounded-full ${
+                        isFaceDetected ? 'bg-purple-400/80' : 'bg-rose-500'
+                      }`}
+                    ></div>
+                    <div
+                      className={`absolute bottom-2 w-6 h-1 rounded-full ${
+                        isFaceDetected ? 'bg-purple-400/80' : 'bg-rose-500'
+                      }`}
+                    ></div>
+                    <div
+                      className={`absolute left-2 h-6 w-1 rounded-full ${
+                        isFaceDetected ? 'bg-purple-400/80' : 'bg-rose-500'
+                      }`}
+                    ></div>
+                    <div
+                      className={`absolute right-2 h-6 w-1 rounded-full ${
+                        isFaceDetected ? 'bg-purple-400/80' : 'bg-rose-500'
+                      }`}
+                    ></div>
+
+                    {/* Laser Scanning Sweep Line (Paused when no face) */}
+                    {isFaceDetected && (
+                      <div
+                        className="absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee] transition-all duration-300"
+                        style={{ top: `${(progress % 100)}%` }}
+                      />
+                    )}
                   </div>
                 </div>
 
-                {/* Live Top HUD Tag */}
-                <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] font-semibold text-white pointer-events-none px-2">
-                  <div className="flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-xs px-2.5 py-1 rounded-full border border-slate-700">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                    <span>LIVE rPPG • {cameraFacingMode === 'user' ? 'FRONT CAMERA' : 'BACK CAMERA'}</span>
+                {/* Prominent Warning Overlay Banner when Face is Missing */}
+                {!isFaceDetected && (
+                  <div className="absolute inset-x-3 top-14 z-30 flex items-center justify-center pointer-events-none animate-in fade-in zoom-in-95 duration-200">
+                    <div className="bg-rose-950/95 border-2 border-rose-500 text-rose-100 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-3 max-w-sm text-center">
+                      <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
+                      <p className="text-xs sm:text-sm font-semibold leading-snug">
+                        ⚠️ No face detected. Please position your face in front of the camera to continue.
+                      </p>
+                    </div>
                   </div>
-                  <div className="bg-purple-950/80 text-purple-300 border border-purple-700 px-2.5 py-1 rounded-full">
-                    {Math.round(progress)}% Complete
+                )}
+
+                {/* Live Top HUD Tag */}
+                <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] font-semibold text-white pointer-events-none px-2 z-20">
+                  <div className="flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-xs px-2.5 py-1 rounded-full border border-slate-700">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isFaceDetected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
+                      }`}
+                    ></span>
+                    <span>
+                      {isFaceDetected
+                        ? `LIVE rPPG • ${cameraFacingMode === 'user' ? 'FRONT CAMERA' : 'BACK CAMERA'}`
+                        : 'SCAN PAUSED • NO FACE DETECTED'}
+                    </span>
+                  </div>
+                  <div
+                    className={`px-2.5 py-1 rounded-full border ${
+                      isFaceDetected
+                        ? 'bg-purple-950/80 text-purple-300 border-purple-700'
+                        : 'bg-rose-950/80 text-rose-300 border-rose-700 font-bold'
+                    }`}
+                  >
+                    {isFaceDetected ? `${Math.round(progress)}% Complete` : 'Paused'}
                   </div>
                 </div>
 
