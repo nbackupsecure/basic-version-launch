@@ -498,23 +498,112 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     await startCamera(cameraFacingMode);
   };
 
-  // Face Detection & Strict Center Alignment check function:
-  // Runs unified logic for BOTH Front and Back cameras.
-  // Validates:
-  // 1. Full uncropped face is present (not partial or cut off at borders)
-  // 2. Face bounding box falls strictly within the central designated oval zone
-  // 3. Bilateral facial symmetry & eye/nose/mouth landmark zones are centered and fully visible
-  const checkFaceInFrame = async (): Promise<boolean> => {
+  // Face Detection & Alignment Result interface
+  interface FaceValidationResult {
+    isValid: boolean;
+    reason?: 'missing' | 'uncentered' | 'partial' | 'rotation' | 'tilt';
+    message?: string;
+  }
+
+  // Refactored Face Validation Engine:
+  // 1. Relax Center Tolerance: Allows ~20-25% deviation from absolute center (horizontal 25%-75%, vertical 20%-80%).
+  // 2. Full Face Requirement (Half-face / crop detection): Checks MediaPipe / ShapeDetection landmark count & bounds.
+  //    Ensures forehead, chin, left and right cheeks are uncropped and visible within the frame.
+  // 3. Head Rotation & Tilt Detection: Measures asymmetry between nose tip and left/right cheeks (yaw) and eye level slope (tilt/roll).
+  // 4. Resume on Correct Position: Automatically resumes scanning & vPPG signal buffering when complete, upright face is aligned.
+  const checkFaceInFrame = async (): Promise<FaceValidationResult> => {
     const video = videoRef.current;
     if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
-      return true; // Video initializing
+      return { isValid: true }; // Video stream initializing
     }
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
 
-    // 1. Native ShapeDetection FaceDetector API (when supported by browser)
+    // 1. Check window.FaceDetector (ShapeDetection API) or MediaPipe FaceMesh if attached
     try {
+      // Check for MediaPipe FaceMesh / FaceLandmarker instance if attached on window
+      const mpDetector = (window as any).faceLandmarker || (window as any).faceMesh;
+      if (mpDetector) {
+        const results = await mpDetector.detectForVideo(video, performance.now());
+        if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
+          const landmarks = results.faceLandmarks[0];
+          // MediaPipe FaceMesh provides 468 landmarks
+          if (!landmarks || landmarks.length < 468) {
+            return {
+              isValid: false,
+              reason: 'partial',
+              message: '⚠️ Bring your full face into the frame to continue'
+            };
+          }
+
+          // Key landmarks: Forehead (10), Chin (152), Left cheek (234), Right cheek (454), Nose tip (1), Left eye (33), Right eye (263)
+          const forehead = landmarks[10];
+          const chin = landmarks[152];
+          const leftCheek = landmarks[234];
+          const rightCheek = landmarks[454];
+          const nose = landmarks[1];
+          const leftEye = landmarks[33];
+          const rightEye = landmarks[263];
+
+          // Check if perimeter landmarks are cropped outside frame bounds
+          if (
+            forehead.y < 0.02 || chin.y > 0.98 ||
+            leftCheek.x < 0.02 || rightCheek.x > 0.98
+          ) {
+            return {
+              isValid: false,
+              reason: 'partial',
+              message: '⚠️ Full face cropped. Please keep your entire face inside the frame'
+            };
+          }
+
+          // Relaxed Center Check (allows 22% deviation from 0.5 center => 0.28 to 0.72)
+          const centerX = (leftCheek.x + rightCheek.x) / 2;
+          const centerY = (forehead.y + chin.y) / 2;
+          if (centerX < 0.28 || centerX > 0.72 || centerY < 0.22 || centerY > 0.78) {
+            return {
+              isValid: false,
+              reason: 'uncentered',
+              message: '⚠️ Position your face inside the relaxed center oval to continue'
+            };
+          }
+
+          // Head Rotation (Yaw): Compare nose tip distance to left cheek vs right cheek
+          const distToLeftCheek = Math.abs(nose.x - leftCheek.x);
+          const distToRightCheek = Math.abs(rightCheek.x - nose.x);
+          const yawRatio = distToLeftCheek / (distToRightCheek || 0.001);
+          if (yawRatio < 0.45 || yawRatio > 2.2) {
+            return {
+              isValid: false,
+              reason: 'rotation',
+              message: '⚠️ Face turned sideways. Look straight at the camera'
+            };
+          }
+
+          // Head Tilt (Roll): Eye line tilt slope
+          const dX = rightEye.x - leftEye.x;
+          const dY = rightEye.y - leftEye.y;
+          const tiltAngle = Math.abs(Math.atan2(dY, dX) * (180 / Math.PI));
+          if (tiltAngle > 22) {
+            return {
+              isValid: false,
+              reason: 'tilt',
+              message: '⚠️ Head tilted too much. Keep your head upright'
+            };
+          }
+
+          return { isValid: true };
+        } else {
+          return {
+            isValid: false,
+            reason: 'missing',
+            message: '⚠️ No face detected. Please position your face in front of the camera'
+          };
+        }
+      }
+
+      // Check ShapeDetection FaceDetector
       if (!detectorRef.current && typeof (window as any).FaceDetector === 'function') {
         detectorRef.current = new (window as any).FaceDetector({ fastMode: false, maxDetectedFaces: 2 });
       }
@@ -524,50 +613,72 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const face = faces[0];
           const bb = face.boundingBox;
           if (bb) {
-            // Normalized coordinates (0 to 1) regardless of camera mode
             const faceCenterX = (bb.left + bb.width / 2) / vw;
             const faceCenterY = (bb.top + bb.height / 2) / vh;
             const faceWidthRatio = bb.width / vw;
             const faceHeightRatio = bb.height / vh;
 
-            // Reject if face is cut off at video edges (partial face)
-            if (bb.left <= 5 || bb.top <= 5 || (bb.left + bb.width) >= vw - 5 || (bb.top + bb.height) >= vh - 5) {
-              return false;
+            // Edge clipping check (relaxed 2% margin)
+            if (bb.left <= vw * 0.02 || (bb.left + bb.width) >= vw * 0.98 || bb.top <= vh * 0.02 || (bb.top + bb.height) >= vh * 0.98) {
+              return {
+                isValid: false,
+                reason: 'partial',
+                message: '⚠️ Bring your full face into the frame to continue'
+              };
             }
 
-            // Reject if face size is too small (too far) or too big (overflowing oval)
-            if (faceWidthRatio < 0.22 || faceWidthRatio > 0.75 || faceHeightRatio < 0.25 || faceHeightRatio > 0.85) {
-              return false;
+            // Relaxed Center Tolerance: allow 22% deviation from 0.50 center (0.28 to 0.72)
+            if (faceCenterX < 0.28 || faceCenterX > 0.72 || faceCenterY < 0.22 || faceCenterY > 0.78) {
+              return {
+                isValid: false,
+                reason: 'uncentered',
+                message: '⚠️ Position your face inside the relaxed center oval to continue'
+              };
             }
 
-            // Strict center check: face center must be within 35%-65% horizontal and 30%-70% vertical
-            const isCentered = faceCenterX >= 0.35 && faceCenterX <= 0.65 && faceCenterY >= 0.30 && faceCenterY <= 0.70;
-            if (!isCentered) {
-              return false;
+            // Size sanity check (relaxed bounds)
+            if (faceWidthRatio < 0.18 || faceWidthRatio > 0.85 || faceHeightRatio < 0.20 || faceHeightRatio > 0.90) {
+              return {
+                isValid: false,
+                reason: 'uncentered',
+                message: '⚠️ Move closer or further so your face fits comfortably'
+              };
             }
 
-            // If landmarks are available (eyes, mouth), ensure both eyes and mouth are inside
-            if (Array.isArray(face.landmarks) && face.landmarks.length >= 3) {
-              for (const lm of face.landmarks) {
-                const lx = (lm.location?.x || lm.x || 0) / vw;
-                const ly = (lm.location?.y || lm.y || 0) / vh;
-                if (lx < 0.25 || lx > 0.75 || ly < 0.20 || ly > 0.80) {
-                  return false; // Landmark outside the center oval frame
+            // If eye/mouth landmarks exist, check head tilt & rotation
+            if (Array.isArray(face.landmarks) && face.landmarks.length >= 2) {
+              const eyeLandmarks = face.landmarks.filter((l: any) => l.type === 'eye');
+              if (eyeLandmarks.length >= 2) {
+                const e1 = eyeLandmarks[0].location || eyeLandmarks[0];
+                const e2 = eyeLandmarks[1].location || eyeLandmarks[1];
+                const dy = Math.abs(e2.y - e1.y);
+                const dx = Math.abs(e2.x - e1.x) || 1;
+                const tiltDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+                if (tiltDeg > 24) {
+                  return {
+                    isValid: false,
+                    reason: 'tilt',
+                    message: '⚠️ Head tilted too much. Keep your head upright'
+                  };
                 }
               }
             }
 
-            return true;
+            return { isValid: true };
           }
         } else {
-          return false; // No face detected by hardware detector
+          return {
+            isValid: false,
+            reason: 'missing',
+            message: '⚠️ No face detected. Please position your face in front of the camera'
+          };
         }
       }
     } catch {
-      // Fallback to high-resolution multi-zone chrominance and landmark analysis below
+      // Continue to canvas fallback
     }
 
-    // 2. High-precision Multi-Zone Skin & Facial Geometry Analyzer (Universal for Front & Back cameras)
+    // 2. High-precision Multi-Zone Canvas Fallback (Robust, Relaxed & Anti-False-Positive)
     try {
       if (!canvasRef.current) {
         canvasRef.current = document.createElement('canvas');
@@ -576,15 +687,13 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       }
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return true;
+      if (!ctx) return { isValid: true };
 
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-
       const cw = canvas.width;
       const ch = canvas.height;
 
-      // Define grid metrics
       const isSkinPixel = (x: number, y: number) => {
         const idx = (y * cw + x) * 4;
         const r = imgData[idx];
@@ -595,13 +704,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         return cr >= 130 && cr <= 178 && cb >= 75 && cb <= 132 && r > g && g > b;
       };
 
-      // Measure skin density in 5 key sectors:
-      // - Center Oval Zone (30% to 70% X, 25% to 75% Y)
-      // - Upper Face (Eyes/Forehead zone: 32% to 68% X, 28% to 48% Y)
-      // - Lower Face (Mouth/Chin zone: 32% to 68% X, 52% to 72% Y)
-      // - Left Hemisphere of Center Oval
-      // - Right Hemisphere of Center Oval
-      // - Outer Border Zones (Left < 15%, Right > 85%, Top < 10%, Bottom > 90%)
+      // Measure relaxed center zone: 22% to 78% X and 18% to 82% Y
       let centerSkinCount = 0;
       let centerTotal = 0;
       let upperFaceSkin = 0;
@@ -611,7 +714,6 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       let leftHalfSkin = 0;
       let rightHalfSkin = 0;
       let halfTotal = 0;
-
       let borderSkinCount = 0;
       let borderTotal = 0;
 
@@ -619,30 +721,30 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         for (let x = 0; x < cw; x += 2) {
           const isSkin = isSkinPixel(x, y);
 
-          // Outer border check: to detect if face is partially cut off at edges
-          if (x < cw * 0.12 || x > cw * 0.88 || y < ch * 0.08 || y > ch * 0.92) {
+          // Border check: detects severe crop/overflow at extreme edges (< 6% or > 94%)
+          if (x < cw * 0.06 || x > cw * 0.94 || y < ch * 0.05 || y > ch * 0.95) {
             borderTotal++;
             if (isSkin) borderSkinCount++;
           }
 
-          // Center oval zone check
-          if (x >= cw * 0.28 && x <= cw * 0.72 && y >= cw * 0.22 && y <= ch * 0.78) {
+          // Relaxed Center Oval Zone (22% to 78% width, 18% to 82% height)
+          if (x >= cw * 0.22 && x <= cw * 0.78 && y >= ch * 0.18 && y <= ch * 0.82) {
             centerTotal++;
             if (isSkin) centerSkinCount++;
 
-            // Upper face (forehead/eyes)
-            if (y >= ch * 0.26 && y <= ch * 0.48) {
+            // Upper face (forehead/eyes zone)
+            if (y >= ch * 0.22 && y <= ch * 0.48) {
               upperTotal++;
               if (isSkin) upperFaceSkin++;
             }
 
-            // Lower face (nose/mouth/chin)
-            if (y >= ch * 0.50 && y <= ch * 0.74) {
+            // Lower face (mouth/chin zone)
+            if (y >= ch * 0.52 && y <= ch * 0.80) {
               lowerTotal++;
               if (isSkin) lowerFaceSkin++;
             }
 
-            // Bilateral symmetry test: Left vs Right halves of the center oval
+            // Left vs Right hemisphere for head turn / rotation asymmetry
             if (x < cw * 0.50) {
               if (isSkin) leftHalfSkin++;
               halfTotal++;
@@ -658,43 +760,59 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       const lowerSkinRatio = lowerTotal > 0 ? lowerFaceSkin / lowerTotal : 0;
       const borderSkinRatio = borderTotal > 0 ? borderSkinCount / borderTotal : 0;
 
-      // 1. Must have solid skin density in the designated center oval (min 15%)
-      if (centerSkinRatio < 0.15) {
-        return false;
+      // 1. Must have face skin in the relaxed center zone (relaxed threshold: min 10%)
+      if (centerSkinRatio < 0.10) {
+        return {
+          isValid: false,
+          reason: 'missing',
+          message: '⚠️ Position your face inside the center oval to continue scanning'
+        };
       }
 
-      // 2. Full Face Validation: Both Upper Face (eyes/forehead) AND Lower Face (mouth/chin) must have skin
-      // If either upper or lower is missing, it's a half-face / cropped face
-      if (upperSkinRatio < 0.10 || lowerSkinRatio < 0.10) {
-        return false;
+      // 2. Full Face Requirement: Both upper (forehead) and lower (chin) zones must have skin
+      if (upperSkinRatio < 0.06 || lowerSkinRatio < 0.06) {
+        return {
+          isValid: false,
+          reason: 'partial',
+          message: '⚠️ Bring your full face into the frame to continue'
+        };
       }
 
-      // 3. Bilateral Centering Symmetry: Face must not be shoved to one side (prevents half-face)
+      // 3. Head Rotation & Tilt: High asymmetry between left and right halves indicates turned head
       const leftRatio = halfTotal > 0 ? leftHalfSkin / halfTotal : 0;
       const rightRatio = halfTotal > 0 ? rightHalfSkin / halfTotal : 0;
-      const symmetryDifference = Math.abs(leftRatio - rightRatio);
-      if (symmetryDifference > 0.42) {
-        return false; // Half face off to the side
+      const asymmetryDiff = Math.abs(leftRatio - rightRatio);
+      // Relaxed threshold: allows natural slight head movements up to 0.58 difference
+      if (asymmetryDiff > 0.58) {
+        return {
+          isValid: false,
+          reason: 'rotation',
+          message: '⚠️ Face turned sideways. Look straight at the camera'
+        };
       }
 
-      // 4. Boundary clipping check: If border skin ratio is high (> 25%), face is overflowing or cut off at edge
-      if (borderSkinRatio > 0.28) {
-        return false;
+      // 4. Extreme edge crop check
+      if (borderSkinRatio > 0.38) {
+        return {
+          isValid: false,
+          reason: 'partial',
+          message: '⚠️ Keep your entire face uncropped inside the frame'
+        };
       }
 
-      return true;
+      return { isValid: true };
     } catch {
-      return true;
+      return { isValid: true };
     }
   };
 
-  // Continuous Face Detection & Alignment Loop during active scan (checks every 200ms)
+  // Continuous Face Detection & Alignment Loop during active scan (runs every 200ms)
   useEffect(() => {
     let faceCheckTimer: NodeJS.Timeout;
     if (isOpen && step === 'scanning' && cameraActive) {
       faceCheckTimer = setInterval(async () => {
-        const isAligned = await checkFaceInFrame();
-        if (isAligned) {
+        const result = await checkFaceInFrame();
+        if (result.isValid) {
           faceMissCountRef.current = 0;
           if (!isFaceDetectedRef.current) {
             isFaceDetectedRef.current = true;
@@ -703,11 +821,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           }
         } else {
           faceMissCountRef.current += 1;
-          // Debounce 2 consecutive intervals (~400ms) to avoid transient false blinks
+          // Debounce 2 consecutive check frames (~400ms) to prevent transient flicker
           if (faceMissCountRef.current >= 2 && isFaceDetectedRef.current) {
             isFaceDetectedRef.current = false;
             setIsFaceDetected(false);
-            setFaceWarning('⚠️ Position your full face inside the center oval to continue scanning');
+            setFaceWarning(result.message || '⚠️ Position your full face inside the center oval to continue scanning');
           }
         }
       }, 200);
@@ -1260,7 +1378,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                     <div className="bg-rose-950/95 border-2 border-rose-500 text-rose-100 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-3 max-w-md text-center">
                       <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
                       <p className="text-xs sm:text-sm font-semibold leading-snug">
-                        ⚠️ Position your full face inside the center oval to continue scanning
+                        {faceWarning || '⚠️ Position your full face inside the center oval to continue scanning'}
                       </p>
                     </div>
                   </div>
