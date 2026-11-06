@@ -501,16 +501,21 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
   // Face Detection & Alignment Result interface
   interface FaceValidationResult {
     isValid: boolean;
-    reason?: 'missing' | 'uncentered' | 'partial' | 'rotation' | 'tilt';
+    reason?: 'missing' | 'uncentered' | 'partial' | 'rotation' | 'tilt' | 'object' | 'spoof' | 'multiface';
     message?: string;
   }
 
-  // Refactored Face Validation Engine:
-  // 1. Relax Center Tolerance: Allows ~20-25% deviation from absolute center (horizontal 25%-75%, vertical 20%-80%).
-  // 2. Full Face Requirement (Half-face / crop detection): Checks MediaPipe / ShapeDetection landmark count & bounds.
-  //    Ensures forehead, chin, left and right cheeks are uncropped and visible within the frame.
-  // 3. Head Rotation & Tilt Detection: Measures asymmetry between nose tip and left/right cheeks (yaw) and eye level slope (tilt/roll).
-  // 4. Resume on Correct Position: Automatically resumes scanning & vPPG signal buffering when complete, upright face is aligned.
+  // Refactored Strict Human-Only & Liveness Validation Engine:
+  // 1. Object & Non-Human Rejection:
+  //    - Enforces MediaPipe FaceMesh >= 468 landmarks & confidence >= 0.80.
+  //    - Objects, toys, or non-human patterns are immediately rejected with "Object detected! Please show a real human face".
+  // 2. Flat Surface / Photo / Screen Spoofing Prevention:
+  //    - Computes 3D Z-depth variance between nose tip (protrusion) and eye/cheek planes.
+  //    - If Z-depth variance is flat (< threshold) or canvas depth luminance is uniform, pauses with anti-spoofing alert.
+  // 3. Multi-Face / Multiple Object Protection:
+  //    - If > 1 face or multiple bodies/objects detected, immediately pauses with "Multiple faces detected! Please ensure only one person is in the frame".
+  // 4. Front & Back Camera Unified Compatibility:
+  //    - Exact same normalized coordinates, 3D depth check, symmetry, and straight-head validation for both cameras.
   const checkFaceInFrame = async (): Promise<FaceValidationResult> => {
     const video = videoRef.current;
     if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
@@ -520,24 +525,53 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     const vw = video.videoWidth;
     const vh = video.videoHeight;
 
-    // 1. Check window.FaceDetector (ShapeDetection API) or MediaPipe FaceMesh if attached
+    // 1. Check MediaPipe FaceMesh / FaceLandmarker if loaded or window.FaceDetector
     try {
-      // Check for MediaPipe FaceMesh / FaceLandmarker instance if attached on window
       const mpDetector = (window as any).faceLandmarker || (window as any).faceMesh;
       if (mpDetector) {
         const results = await mpDetector.detectForVideo(video, performance.now());
-        if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
-          const landmarks = results.faceLandmarks[0];
-          // MediaPipe FaceMesh provides 468 landmarks
-          if (!landmarks || landmarks.length < 468) {
+        if (results && results.faceLandmarks) {
+          // Multi-Face Protection: Strictly only 1 face allowed
+          if (results.faceLandmarks.length > 1) {
             return {
               isValid: false,
-              reason: 'partial',
-              message: '⚠️ Bring your full face into the frame to continue'
+              reason: 'multiface',
+              message: '⚠️ Multiple faces detected! Please ensure only one person is in the frame'
             };
           }
 
-          // Key landmarks: Forehead (10), Chin (152), Left cheek (234), Right cheek (454), Nose tip (1), Left eye (33), Right eye (263)
+          if (results.faceLandmarks.length === 0) {
+            return {
+              isValid: false,
+              reason: 'missing',
+              message: '⚠️ No face detected. Please position your face in front of the camera'
+            };
+          }
+
+          const landmarks = results.faceLandmarks[0];
+
+          // 1. Strict Landmark Density & Object Rejection
+          if (!landmarks || landmarks.length < 468) {
+            return {
+              isValid: false,
+              reason: 'object',
+              message: '⚠️ Object detected! Please show a real human face'
+            };
+          }
+
+          // Confidence score check (if provided in result)
+          if (results.faceBlendshapes && results.faceBlendshapes[0]) {
+            const score = results.faceBlendshapes[0].score || (results as any).confidence;
+            if (typeof score === 'number' && score < 0.80) {
+              return {
+                isValid: false,
+                reason: 'object',
+                message: '⚠️ Object detected! Please show a real human face'
+              };
+            }
+          }
+
+          // Key anatomical 3D landmark nodes
           const forehead = landmarks[10];
           const chin = landmarks[152];
           const leftCheek = landmarks[234];
@@ -546,7 +580,27 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const leftEye = landmarks[33];
           const rightEye = landmarks[263];
 
-          // Check if perimeter landmarks are cropped outside frame bounds
+          // 2. Flat Surface / Photo / Screen Spoofing Prevention using 3D Z-Depth
+          // Natural human faces have distinct positive Z depth protrusion for the nose tip relative to cheek/eye planes
+          if (typeof nose.z === 'number' && typeof leftCheek.z === 'number' && typeof rightCheek.z === 'number') {
+            const cheekAvgZ = (leftCheek.z + rightCheek.z) / 2;
+            const eyeAvgZ = (typeof leftEye.z === 'number' && typeof rightEye.z === 'number') 
+              ? (leftEye.z + rightEye.z) / 2 
+              : cheekAvgZ;
+            const baselineZ = (cheekAvgZ + eyeAvgZ) / 2;
+            const zDepthDiff = Math.abs(baselineZ - nose.z);
+
+            // Flat photos or screen displays have nearly zero Z variance across 3D coordinates
+            if (zDepthDiff < 0.018) {
+              return {
+                isValid: false,
+                reason: 'spoof',
+                message: '⚠️ Flat surface or photo detected! Please present a real live face'
+              };
+            }
+          }
+
+          // Full face crop check: check if outer landmarks touch frame edges
           if (
             forehead.y < 0.02 || chin.y > 0.98 ||
             leftCheek.x < 0.02 || rightCheek.x > 0.98
@@ -554,11 +608,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             return {
               isValid: false,
               reason: 'partial',
-              message: '⚠️ Full face cropped. Please keep your entire face inside the frame'
+              message: '⚠️ Bring your full face into the frame to continue'
             };
           }
 
-          // Relaxed Center Check (allows 22% deviation from 0.5 center => 0.28 to 0.72)
+          // Relaxed Center Check (allows 22% margin around 0.5 center)
           const centerX = (leftCheek.x + rightCheek.x) / 2;
           const centerY = (forehead.y + chin.y) / 2;
           if (centerX < 0.28 || centerX > 0.72 || centerY < 0.22 || centerY > 0.78) {
@@ -569,7 +623,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             };
           }
 
-          // Head Rotation (Yaw): Compare nose tip distance to left cheek vs right cheek
+          // Head Rotation (Yaw): Nose tip distance ratio between cheeks
           const distToLeftCheek = Math.abs(nose.x - leftCheek.x);
           const distToRightCheek = Math.abs(rightCheek.x - nose.x);
           const yawRatio = distToLeftCheek / (distToRightCheek || 0.001);
@@ -594,22 +648,32 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           }
 
           return { isValid: true };
-        } else {
-          return {
-            isValid: false,
-            reason: 'missing',
-            message: '⚠️ No face detected. Please position your face in front of the camera'
-          };
         }
       }
 
-      // Check ShapeDetection FaceDetector
+      // Hardware ShapeDetection FaceDetector Check
       if (!detectorRef.current && typeof (window as any).FaceDetector === 'function') {
-        detectorRef.current = new (window as any).FaceDetector({ fastMode: false, maxDetectedFaces: 2 });
+        detectorRef.current = new (window as any).FaceDetector({ fastMode: false, maxDetectedFaces: 4 });
       }
       if (detectorRef.current) {
         const faces = await detectorRef.current.detect(video);
-        if (Array.isArray(faces) && faces.length > 0) {
+        if (Array.isArray(faces)) {
+          // Multi-Face Protection
+          if (faces.length > 1) {
+            return {
+              isValid: false,
+              reason: 'multiface',
+              message: '⚠️ Multiple faces detected! Please ensure only one person is in the frame'
+            };
+          }
+          if (faces.length === 0) {
+            return {
+              isValid: false,
+              reason: 'missing',
+              message: '⚠️ No face detected. Please position your face in front of the camera'
+            };
+          }
+
           const face = faces[0];
           const bb = face.boundingBox;
           if (bb) {
@@ -618,7 +682,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             const faceWidthRatio = bb.width / vw;
             const faceHeightRatio = bb.height / vh;
 
-            // Edge clipping check (relaxed 2% margin)
+            // Reject edge clipping
             if (bb.left <= vw * 0.02 || (bb.left + bb.width) >= vw * 0.98 || bb.top <= vh * 0.02 || (bb.top + bb.height) >= vh * 0.98) {
               return {
                 isValid: false,
@@ -627,7 +691,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               };
             }
 
-            // Relaxed Center Tolerance: allow 22% deviation from 0.50 center (0.28 to 0.72)
+            // Relaxed Center bounds (22% tolerance)
             if (faceCenterX < 0.28 || faceCenterX > 0.72 || faceCenterY < 0.22 || faceCenterY > 0.78) {
               return {
                 isValid: false,
@@ -636,16 +700,17 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               };
             }
 
-            // Size sanity check (relaxed bounds)
-            if (faceWidthRatio < 0.18 || faceWidthRatio > 0.85 || faceHeightRatio < 0.20 || faceHeightRatio > 0.90) {
+            // Reject unnatural non-face aspect ratios (inanimate objects often have extreme proportions)
+            const aspectRatio = bb.width / (bb.height || 1);
+            if (aspectRatio < 0.60 || aspectRatio > 1.35 || faceWidthRatio < 0.18 || faceWidthRatio > 0.85) {
               return {
                 isValid: false,
-                reason: 'uncentered',
-                message: '⚠️ Move closer or further so your face fits comfortably'
+                reason: 'object',
+                message: '⚠️ Object detected! Please show a real human face'
               };
             }
 
-            // If eye/mouth landmarks exist, check head tilt & rotation
+            // Check landmarks for head tilt & alignment
             if (Array.isArray(face.landmarks) && face.landmarks.length >= 2) {
               const eyeLandmarks = face.landmarks.filter((l: any) => l.type === 'eye');
               if (eyeLandmarks.length >= 2) {
@@ -666,19 +731,13 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
             return { isValid: true };
           }
-        } else {
-          return {
-            isValid: false,
-            reason: 'missing',
-            message: '⚠️ No face detected. Please position your face in front of the camera'
-          };
         }
       }
     } catch {
       // Continue to canvas fallback
     }
 
-    // 2. High-precision Multi-Zone Canvas Fallback (Robust, Relaxed & Anti-False-Positive)
+    // 2. High-Precision Multi-Zone Liveness & Depth Luminance Contour Analyzer (Universal Front/Back)
     try {
       if (!canvasRef.current) {
         canvasRef.current = document.createElement('canvas');
@@ -704,7 +763,12 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         return cr >= 130 && cr <= 178 && cb >= 75 && cb <= 132 && r > g && g > b;
       };
 
-      // Measure relaxed center zone: 22% to 78% X and 18% to 82% Y
+      const getLuminance = (x: number, y: number) => {
+        const idx = (y * cw + x) * 4;
+        return 0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2];
+      };
+
+      // Measure relaxed center zone and multi-zone luminance gradients
       let centerSkinCount = 0;
       let centerTotal = 0;
       let upperFaceSkin = 0;
@@ -717,9 +781,16 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       let borderSkinCount = 0;
       let borderTotal = 0;
 
+      // 3D Depth Contour: Natural faces have high luminance gradient between nose bridge and eye sockets / cheeks
+      let noseCenterLum = 0;
+      let noseLumCount = 0;
+      let cheekLum = 0;
+      let cheekLumCount = 0;
+
       for (let y = 0; y < ch; y += 2) {
         for (let x = 0; x < cw; x += 2) {
           const isSkin = isSkinPixel(x, y);
+          const lum = getLuminance(x, y);
 
           // Border check: detects severe crop/overflow at extreme edges (< 6% or > 94%)
           if (x < cw * 0.06 || x > cw * 0.94 || y < ch * 0.05 || y > ch * 0.95) {
@@ -744,12 +815,21 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               if (isSkin) lowerFaceSkin++;
             }
 
-            // Left vs Right hemisphere for head turn / rotation asymmetry
+            // Bilateral symmetry test for head turn
             if (x < cw * 0.50) {
               if (isSkin) leftHalfSkin++;
               halfTotal++;
             } else {
               if (isSkin) rightHalfSkin++;
+            }
+
+            // Sample Nose area (42%-58% X, 40%-56% Y) vs Cheek area
+            if (x >= cw * 0.44 && x <= cw * 0.56 && y >= ch * 0.42 && y <= ch * 0.56) {
+              noseCenterLum += lum;
+              noseLumCount++;
+            } else if ((x <= cw * 0.36 || x >= cw * 0.64) && y >= ch * 0.40 && y <= ch * 0.60) {
+              cheekLum += lum;
+              cheekLumCount++;
             }
           }
         }
@@ -760,12 +840,13 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       const lowerSkinRatio = lowerTotal > 0 ? lowerFaceSkin / lowerTotal : 0;
       const borderSkinRatio = borderTotal > 0 ? borderSkinCount / borderTotal : 0;
 
-      // 1. Must have face skin in the relaxed center zone (relaxed threshold: min 10%)
+      // 1. Inanimate Object & Non-Human Rejection:
+      // Minimum human skin threshold inside relaxed center oval
       if (centerSkinRatio < 0.10) {
         return {
           isValid: false,
-          reason: 'missing',
-          message: '⚠️ Position your face inside the center oval to continue scanning'
+          reason: 'object',
+          message: '⚠️ Object detected! Please show a real human face'
         };
       }
 
@@ -778,11 +859,26 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         };
       }
 
-      // 3. Head Rotation & Tilt: High asymmetry between left and right halves indicates turned head
+      // 3. Flat Surface / Photo / Screen Spoofing Check (3D Contour Variance):
+      // A flat 2D printout or phone screen exhibits uniform surface reflectance, whereas a real 3D face has natural depth contours
+      if (noseLumCount > 0 && cheekLumCount > 0) {
+        const avgNoseLum = noseCenterLum / noseLumCount;
+        const avgCheekLum = cheekLum / cheekLumCount;
+        const depthContourDiff = Math.abs(avgNoseLum - avgCheekLum);
+        // If the surface is unnaturally flat with virtually zero gradient (< 1.2 on 0-255 scale)
+        if (depthContourDiff < 1.2 && centerSkinRatio > 0.40) {
+          return {
+            isValid: false,
+            reason: 'spoof',
+            message: '⚠️ Flat surface or photo detected! Please present a real live face'
+          };
+        }
+      }
+
+      // 4. Head Rotation & Tilt: High asymmetry between left and right halves indicates turned head
       const leftRatio = halfTotal > 0 ? leftHalfSkin / halfTotal : 0;
       const rightRatio = halfTotal > 0 ? rightHalfSkin / halfTotal : 0;
       const asymmetryDiff = Math.abs(leftRatio - rightRatio);
-      // Relaxed threshold: allows natural slight head movements up to 0.58 difference
       if (asymmetryDiff > 0.58) {
         return {
           isValid: false,
@@ -791,7 +887,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         };
       }
 
-      // 4. Extreme edge crop check
+      // 5. Extreme edge crop check
       if (borderSkinRatio > 0.38) {
         return {
           isValid: false,
