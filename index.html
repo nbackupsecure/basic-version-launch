@@ -14,6 +14,23 @@
     <link rel="apple-touch-icon" href="/Nhealth_logo_8cm_x_8cm_high_quality-3.png" />
     <meta property="og:image" content="/Nhealth_logo_8cm_x_8cm_high_quality-3.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Automatically unregister any legacy service workers and clear browser caches
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for (var reg of registrations) {
+            reg.unregister();
+          }
+        });
+      }
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          for (var name of names) {
+            caches.delete(name);
+          }
+        });
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
