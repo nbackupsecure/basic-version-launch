@@ -17,7 +17,8 @@ import {
   Sparkles,
   Car,
   Mail,
-  Heart
+  Heart,
+  ExternalLink
 } from 'lucide-react';
 import { VitalLensModal } from './components/VitalLensModal';
 import { AdminCommandCenter } from './components/AdminCommandCenter';
@@ -884,6 +885,15 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-center gap-6">
             <a href="#services" className="hover:text-white transition-colors">Services</a>
             <a href="#booking-form" className="hover:text-white transition-colors">Book Now</a>
+            <a
+              href="https://three0-10-26.onrender.com/teams"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-white transition-colors inline-flex items-center gap-1 font-medium"
+            >
+              <span>Teams</span>
+              <ExternalLink className="w-3 h-3 text-slate-400" />
+            </a>
             <a href="#contact" className="hover:text-white transition-colors">Contact Us</a>
             <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="hover:text-emerald-400 transition-colors">Helpline +91 9393934621</a>
           </div>
