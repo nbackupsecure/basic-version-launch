@@ -6,11 +6,14 @@
  * to bypass browser CORS preflight restrictions when sending data to Google Sheets.
  */
 
-// 1. Define global constant SCRIPT_URL with environment variable or fallback placeholder
+import { SCRIPT_URL as CONFIG_SCRIPT_URL } from '../config.js';
+
+// 1. Define global constant SCRIPT_URL from config.js with env override capability
 export const SCRIPT_URL =
   import.meta.env.VITE_GOOGLE_SHEETS_WEBHOOK_URL ||
   import.meta.env.VITE_TEAMS_SCRIPT_URL ||
-  'https://script.google.com/macros/s/AKfycbz_nhealth_teams_placeholder/exec';
+  CONFIG_SCRIPT_URL ||
+  'https://script.google.com/macros/s/AKfycbzxBUXaA36PldpKByV2JS3P2DabaA-blsP_Ry4Q4zgepfOCn3PIMaUgYYd7hcJ29GAv5w/exec';
 
 export interface ApiResponse<T = any> {
   success: boolean;
