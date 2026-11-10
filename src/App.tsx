@@ -17,32 +17,36 @@ import {
   Sparkles,
   Car,
   Mail,
-  Heart,
-  ExternalLink
+  Heart
 } from 'lucide-react';
 import { VitalLensModal } from './components/VitalLensModal';
 import { AdminCommandCenter } from './components/AdminCommandCenter';
+import { TeamsLogin } from './components/TeamsLogin';
+import { TeamsAdminDashboard } from './components/TeamsAdminDashboard';
 
-const isCommandCenterRoute = (): boolean => {
-  if (typeof window === 'undefined') return false;
+const getAppRoute = (): string => {
+  if (typeof window === 'undefined') return '/';
   const p = (window.location.pathname || '').toLowerCase();
   const h = (window.location.hash || '').toLowerCase();
   const s = (window.location.search || '').toLowerCase();
-  return (
-    p.includes('command-center') ||
-    h.includes('command-center') ||
-    s.includes('command-center')
-  );
+  if (p.includes('command-center') || h.includes('command-center') || s.includes('command-center')) {
+    return '/command-center';
+  }
+  if (p.includes('teams-admin') || h.includes('teams-admin') || s.includes('teams-admin')) {
+    return '/teams-admin';
+  }
+  if (p.includes('teams') || h.includes('teams') || s.includes('teams')) {
+    return '/teams';
+  }
+  return '/';
 };
 
 export default function App() {
-  const [currentPath, setCurrentPath] = useState<string>(() => {
-    return isCommandCenterRoute() ? '/command-center' : '/';
-  });
+  const [currentPath, setCurrentPath] = useState<string>(() => getAppRoute());
 
   React.useEffect(() => {
     const handleLocationChange = () => {
-      setCurrentPath(isCommandCenterRoute() ? '/command-center' : '/');
+      setCurrentPath(getAppRoute());
     };
 
     window.addEventListener('popstate', handleLocationChange);
@@ -57,9 +61,17 @@ export default function App() {
     if (typeof window !== 'undefined') {
       if (path === '/command-center') {
         window.history.pushState({}, '', '/command-center');
+      } else if (path === '/teams-admin') {
+        window.history.pushState({}, '', '/teams-admin');
+      } else if (path === '/teams') {
+        window.history.pushState({}, '', '/teams');
       } else {
         window.history.pushState({}, '', '/');
-        if (window.location.hash.toLowerCase().includes('command-center')) {
+        if (
+          window.location.hash.toLowerCase().includes('command-center') ||
+          window.location.hash.toLowerCase().includes('teams-admin') ||
+          window.location.hash.toLowerCase().includes('teams')
+        ) {
           window.location.hash = '';
         }
       }
@@ -150,6 +162,24 @@ export default function App() {
 
   if (currentPath === '/command-center') {
     return <AdminCommandCenter onBackToHome={() => navigate('/')} />;
+  }
+
+  if (currentPath === '/teams-admin') {
+    return (
+      <TeamsAdminDashboard
+        onBackToHome={() => navigate('/')}
+        onNavigateToTeamsLogin={() => navigate('/teams')}
+      />
+    );
+  }
+
+  if (currentPath === '/teams') {
+    return (
+      <TeamsLogin
+        onBackToHome={() => navigate('/')}
+        onNavigateToAdmin={() => navigate('/teams-admin')}
+      />
+    );
   }
 
   return (
@@ -883,16 +913,18 @@ export default function App() {
             <span>• Bharat's Biggest Unified Healthcare Network</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-6">
+            <a href="#about" className="hover:text-white transition-colors">About Us</a>
             <a href="#services" className="hover:text-white transition-colors">Services</a>
             <a href="#booking-form" className="hover:text-white transition-colors">Book Now</a>
             <a
-              href="https://three0-10-26.onrender.com/teams"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-white transition-colors inline-flex items-center gap-1 font-medium"
+              href="/teams"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate('/teams');
+              }}
+              className="hover:text-white transition-colors font-medium text-slate-300 hover:underline"
             >
-              <span>Teams</span>
-              <ExternalLink className="w-3 h-3 text-slate-400" />
+              Teams
             </a>
             <a href="#contact" className="hover:text-white transition-colors">Contact Us</a>
             <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="hover:text-emerald-400 transition-colors">Helpline +91 9393934621</a>
