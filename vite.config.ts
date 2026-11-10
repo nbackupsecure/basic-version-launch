@@ -3,9 +3,35 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+const APP_VERSION = '1.0.1';
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'html-version-bust',
+        transformIndexHtml(html) {
+          return html.replace(
+            /(<script\s+type="module"\s+crossorigin\s+src="[^"]+)(")/g,
+            `$1?v=${APP_VERSION}$2`
+          ).replace(
+            /(<link\s+rel="stylesheet"\s+crossorigin\s+href="[^"]+)(")/g,
+            `$1?v=${APP_VERSION}$2`
+          );
+        }
+      }
+    ],
+    build: {
+      rollupOptions: {
+        output: {
+          entryFileNames: `assets/[name]-[hash].js`,
+          chunkFileNames: `assets/[name]-[hash].js`,
+          assetFileNames: `assets/[name]-[hash].[ext]`
+        }
+      }
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
