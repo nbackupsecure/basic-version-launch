@@ -178,6 +178,7 @@ export default function App() {
       <TeamsLogin
         onBackToHome={() => navigate('/')}
         onNavigateToAdmin={() => navigate('/teams-admin')}
+        onLoginSuccess={() => navigate('/teams-admin')}
       />
     );
   }

@@ -5,9 +5,14 @@ import { logTeamsActivityToGoogleSheets } from '../lib/googleSheets';
 interface TeamsLoginProps {
   onBackToHome: () => void;
   onNavigateToAdmin?: () => void;
+  onLoginSuccess?: (username: string) => void;
 }
 
-export const TeamsLogin: React.FC<TeamsLoginProps> = ({ onBackToHome, onNavigateToAdmin }) => {
+export const TeamsLogin: React.FC<TeamsLoginProps> = ({
+  onBackToHome,
+  onNavigateToAdmin,
+  onLoginSuccess,
+}) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -44,7 +49,18 @@ export const TeamsLogin: React.FC<TeamsLoginProps> = ({ onBackToHome, onNavigate
         console.warn('Google Sheets sync notice:', syncResult.message);
       }
 
+      // Mark admin session active in session storage so admin dashboard unlocks automatically
+      sessionStorage.setItem('nhealth_teams_admin_auth', 'true');
+      sessionStorage.setItem('nhealth_logged_user', username.trim());
+
       setIsLoggedIn(true);
+
+      // Direct redirection to Admin Dashboard / Employee Portal
+      if (onLoginSuccess) {
+        onLoginSuccess(username.trim());
+      } else if (onNavigateToAdmin) {
+        onNavigateToAdmin();
+      }
     } catch (err: any) {
       setError(err?.message || 'Login attempt failed. Please check your credentials.');
     } finally {
@@ -112,13 +128,29 @@ export const TeamsLogin: React.FC<TeamsLoginProps> = ({ onBackToHome, onNavigate
                   You are successfully authenticated into the Nhealth staff workspace.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsLoggedIn(false)}
-                className="py-2.5 px-5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 rounded-xl transition-colors cursor-pointer"
-              >
-                Log Out
-              </button>
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onLoginSuccess) {
+                      onLoginSuccess(username.trim());
+                    } else if (onNavigateToAdmin) {
+                      onNavigateToAdmin();
+                    }
+                  }}
+                  className="py-2.5 px-5 bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white rounded-xl transition-colors cursor-pointer shadow-md shadow-blue-600/30 flex items-center gap-2"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Open Admin Dashboard</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsLoggedIn(false)}
+                  className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-xl transition-colors cursor-pointer"
+                >
+                  Log Out
+                </button>
+              </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
