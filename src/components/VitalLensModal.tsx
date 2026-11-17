@@ -19,7 +19,15 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { extractGreenChannelROI, preprocessRPPGSignal } from '../lib/rppg';
+import {
+  extractRGBChannelsROI,
+  computeVitalsFromRPPG,
+  evaluateForeheadLighting,
+  detectHeadMotionAndTalking,
+  RPPGFrameSample,
+  LandmarkPoint
+} from '../lib/rppg';
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export interface PatientInfo {
   fullName: string;
@@ -107,13 +115,33 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rppgCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rppgBufferRef = useRef<RPPGFrameSample[]>([]);
+  const lastLandmarksRef = useRef<LandmarkPoint[] | null>(null);
+  const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const detectorRef = useRef<any>(null);
   const isFaceDetectedRef = useRef<boolean>(true);
   const faceMissCountRef = useRef<number>(0);
+  const prevMotionLandmarksRef = useRef<LandmarkPoint[] | null>(null);
+  const motionCooldownUntilRef = useRef<number>(0);
+  const alignWarningRef = useRef<string | null>(null);
+  const lightingWarningRef = useRef<string | null>(null);
+  const motionWarningRef = useRef<string | null>(null);
 
-  // Real-time Face Detection state
+  // Real-time Face Detection & Guardrail state
   const [isFaceDetected, setIsFaceDetected] = useState<boolean>(true);
   const [faceWarning, setFaceWarning] = useState<string | null>(null);
+
+  const syncScanGuardrails = () => {
+    const activeWarning =
+      alignWarningRef.current || lightingWarningRef.current || motionWarningRef.current;
+    const isOk = !activeWarning;
+    if (isFaceDetectedRef.current !== isOk) {
+      isFaceDetectedRef.current = isOk;
+      setIsFaceDetected(isOk);
+    }
+    setFaceWarning(activeWarning);
+  };
 
   // Stop camera helper
   const stopCamera = () => {
@@ -582,6 +610,32 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     };
   }, [isOpen, step, cameraActive]);
 
+  // Lazy-load MediaPipe FaceLandmarker (468+ 3D landmarks) in VIDEO mode
+  const initFaceLandmarker = async () => {
+    if (faceLandmarkerRef.current) return faceLandmarkerRef.current;
+    try {
+      const vision = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+      );
+      const landmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath:
+            'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+          delegate: 'GPU'
+        },
+        runningMode: 'VIDEO',
+        numFaces: 2,
+        minFaceDetectionConfidence: 0.65,
+        minFacePresenceConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
+      faceLandmarkerRef.current = landmarker;
+      return landmarker;
+    } catch {
+      return null;
+    }
+  };
+
   // Begin Scanning sequence
   const startScan = async () => {
     setStep('scanning');
@@ -590,13 +644,21 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     isFaceDetectedRef.current = true;
     setFaceWarning(null);
     faceMissCountRef.current = 0;
+    rppgBufferRef.current = [];
+    lastLandmarksRef.current = null;
+    prevMotionLandmarksRef.current = null;
+    motionCooldownUntilRef.current = 0;
+    alignWarningRef.current = null;
+    lightingWarningRef.current = null;
+    motionWarningRef.current = null;
+    initFaceLandmarker();
     await startCamera(cameraFacingMode);
   };
 
   // Face Detection & Alignment Result interface
   interface FaceValidationResult {
     isValid: boolean;
-    reason?: 'missing' | 'uncentered' | 'partial' | 'rotation' | 'tilt' | 'object' | 'spoof' | 'multiface';
+    reason?: 'missing' | 'uncentered' | 'partial' | 'rotation' | 'tilt' | 'object' | 'spoof' | 'multiface' | 'motion';
     message?: string;
   }
 
@@ -646,6 +708,12 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
     // Sync overlay canvas dimensions to exact rendered video dimensions
     syncOverlayCanvasSize();
+    const overlayCtx = overlayCanvasRef.current?.getContext('2d') || null;
+    const clearOverlay = () => {
+      if (overlayCtx && overlayCanvasRef.current) {
+        overlayCtx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
+      }
+    };
 
     // Margin thresholds relaxed by ~15-20% on mobile/tablet screens
     const edgeMin = isMobileOrTablet ? -0.14 : 0.02;
@@ -655,26 +723,28 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     const centerMinY = isMobileOrTablet ? 0.10 : 0.22;
     const centerMaxY = isMobileOrTablet ? 0.90 : 0.78;
 
-    // 1. Check MediaPipe FaceMesh / FaceLandmarker if loaded or window.FaceDetector
+    // 1. Check MediaPipe FaceMesh / FaceLandmarker
     try {
-      const mpDetector = (window as any).faceLandmarker || (window as any).faceMesh;
+      const mpDetector = faceLandmarkerRef.current || (window as any).faceLandmarker || (window as any).faceMesh;
       if (mpDetector) {
         const results = await mpDetector.detectForVideo(video, performance.now());
         if (results && results.faceLandmarks) {
           // Multi-Face Protection: Strictly only 1 face allowed
           if (results.faceLandmarks.length > 1) {
+            clearOverlay();
             return {
               isValid: false,
               reason: 'multiface',
-              message: '⚠️ Multiple faces detected! Please ensure only one person is in the frame'
+              message: 'Multiple faces detected. Please ensure only one person is in the frame.'
             };
           }
 
           if (results.faceLandmarks.length === 0) {
+            clearOverlay();
             return {
               isValid: false,
               reason: 'missing',
-              message: '⚠️ No face detected. Please position your face in front of the camera'
+              message: 'Please align your face inside the frame'
             };
           }
 
@@ -682,10 +752,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
           // 1. Strict Landmark Density & Object Rejection
           if (!landmarks || landmarks.length < 468) {
+            clearOverlay();
             return {
               isValid: false,
               reason: 'object',
-              message: '⚠️ Object detected! Please show a real human face'
+              message: 'Please align your face inside the frame'
             };
           }
 
@@ -746,10 +817,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             minFaceY < edgeMin || maxFaceY > edgeMax ||
             minFaceX < edgeMin || maxFaceX > edgeMax
           ) {
+            clearOverlay();
             return {
               isValid: false,
               reason: 'partial',
-              message: '⚠️ Bring your full face into the frame to continue'
+              message: 'Please align your face inside the frame'
             };
           }
 
@@ -757,10 +829,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const centerX = (minFaceX + maxFaceX) / 2;
           const centerY = (minFaceY + maxFaceY) / 2;
           if (centerX < centerMinX || centerX > centerMaxX || centerY < centerMinY || centerY > centerMaxY) {
+            clearOverlay();
             return {
               isValid: false,
               reason: 'uncentered',
-              message: '⚠️ Position your face inside the relaxed center oval to continue'
+              message: 'Please align your face inside the frame'
             };
           }
 
@@ -769,10 +842,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const distToRightCheek = Math.abs(rightCheek.x - nose.x);
           const yawRatio = distToLeftCheek / (distToRightCheek || 0.001);
           if (yawRatio < 0.42 || yawRatio > 2.35) {
+            clearOverlay();
             return {
               isValid: false,
               reason: 'rotation',
-              message: '⚠️ Face turned sideways. Look straight at the camera'
+              message: 'Please align your face inside the frame'
             };
           }
 
@@ -781,11 +855,70 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const dY = rightEye.y - leftEye.y;
           const tiltAngle = Math.abs(Math.atan2(dY, dX) * (180 / Math.PI));
           if (tiltAngle > 24 && tiltAngle < 156) {
+            clearOverlay();
             return {
               isValid: false,
               reason: 'tilt',
-              message: '⚠️ Head tilted too much. Keep your head upright'
+              message: 'Please align your face inside the frame'
             };
+          }
+
+          // Head Motion & Talking Check across consecutive frames
+          const motionEval = detectHeadMotionAndTalking(prevMotionLandmarksRef.current, landmarks);
+          prevMotionLandmarksRef.current = landmarks;
+          const nowTs = performance.now();
+          if (motionEval.isMoving) {
+            motionCooldownUntilRef.current = nowTs + 600;
+            lastLandmarksRef.current = landmarks;
+            return {
+              isValid: false,
+              reason: 'motion',
+              message: motionEval.message || 'Hold still — head movement detected'
+            };
+          }
+          if (nowTs < motionCooldownUntilRef.current) {
+            lastLandmarksRef.current = landmarks;
+            return {
+              isValid: false,
+              reason: 'motion',
+              message: 'Hold still — stabilizing frame...'
+            };
+          }
+
+          // Store tracked landmarks for rPPG ROI extraction
+          lastLandmarksRef.current = landmarks;
+
+          // Draw subtle tracking nodes & ROI boxes on key tracked regions: forehead, cheeks, chin
+          if (overlayCtx && overlayCanvasRef.current) {
+            const ow = overlayCanvasRef.current.width;
+            const oh = overlayCanvasRef.current.height;
+            overlayCtx.clearRect(0, 0, ow, oh);
+            const roiCenters = [10, 118, 347]; // Forehead, Left Cheek, Right Cheek
+            const trackedIndices = [10, 151, 118, 234, 347, 454, 152];
+            overlayCtx.strokeStyle = 'rgba(34, 211, 238, 0.55)';
+            overlayCtx.lineWidth = 1;
+            const boxW = Math.max(18, Math.round(ow * 0.11));
+            const boxH = Math.max(12, Math.round(oh * 0.06));
+            for (const rIdx of roiCenters) {
+              const rPt = landmarks[rIdx];
+              if (!rPt) continue;
+              const rx = ((rPt.x * scaledW - cropOffsetX) / rw) * ow - boxW / 2;
+              const ry = ((rPt.y * scaledH - cropOffsetY) / rh) * oh - boxH / 2;
+              overlayCtx.strokeRect(rx, ry, boxW, boxH);
+            }
+            overlayCtx.fillStyle = 'rgba(34, 211, 238, 0.85)';
+            overlayCtx.strokeStyle = 'rgba(16, 185, 129, 0.7)';
+            overlayCtx.lineWidth = 1.5;
+            for (const idx of trackedIndices) {
+              const pt = landmarks[idx];
+              if (!pt) continue;
+              const px = ((pt.x * scaledW - cropOffsetX) / rw) * ow;
+              const py = ((pt.y * scaledH - cropOffsetY) / rh) * oh;
+              overlayCtx.beginPath();
+              overlayCtx.arc(px, py, 3, 0, Math.PI * 2);
+              overlayCtx.fill();
+              overlayCtx.stroke();
+            }
           }
 
           return { isValid: true };
@@ -1059,7 +1192,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     }
   };
 
-  // Continuous Face Detection & Alignment Loop during active scan (runs every 200ms)
+  // Continuous Face Detection & Alignment Loop during active scan (runs every 150ms)
   useEffect(() => {
     let faceCheckTimer: NodeJS.Timeout;
     if (isOpen && step === 'scanning' && cameraActive) {
@@ -1067,22 +1200,25 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         const result = await checkFaceInFrame();
         if (result.isValid) {
           faceMissCountRef.current = 0;
-          if (!isFaceDetectedRef.current) {
-            isFaceDetectedRef.current = true;
-            setIsFaceDetected(true);
-            setFaceWarning(null);
-          }
+          alignWarningRef.current = null;
+          motionWarningRef.current = null;
+        } else if (result.reason === 'motion') {
+          alignWarningRef.current = null;
+          motionWarningRef.current = result.message || 'Hold still — head movement detected';
         } else {
           faceMissCountRef.current += 1;
-          // Debounce 2 consecutive check frames (~400ms) to prevent transient flicker
-          if (faceMissCountRef.current >= 2 && isFaceDetectedRef.current) {
-            isFaceDetectedRef.current = false;
-            setIsFaceDetected(false);
-            setFaceWarning(result.message || '⚠️ Position your full face inside the center oval to continue scanning');
-          }
+          prevMotionLandmarksRef.current = null;
+          motionWarningRef.current = null;
+          alignWarningRef.current = result.message || 'Please align your face inside the frame';
         }
-      }, 200);
+        syncScanGuardrails();
+      }, 150);
     } else {
+      alignWarningRef.current = null;
+      lightingWarningRef.current = null;
+      motionWarningRef.current = null;
+      prevMotionLandmarksRef.current = null;
+      motionCooldownUntilRef.current = 0;
       setIsFaceDetected(true);
       isFaceDetectedRef.current = true;
       setFaceWarning(null);
@@ -1094,14 +1230,90 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     };
   }, [isOpen, step, cameraActive]);
 
-  // Simulated Scanning Progress Loop (Exact 20 seconds duration with Auto Pause / Resume)
+  // Real-Time rPPG ROI Micro-Color Signal Sampling + Per-Frame Forehead Lighting Guardrail (~20 FPS)
+  useEffect(() => {
+    let sampleTimer: NodeJS.Timeout;
+    if (isOpen && step === 'scanning' && cameraActive) {
+      if (!rppgCanvasRef.current) {
+        rppgCanvasRef.current = document.createElement('canvas');
+        rppgCanvasRef.current.width = 160;
+        rppgCanvasRef.current.height = 120;
+      }
+
+      sampleTimer = setInterval(() => {
+        const video = videoRef.current;
+        const canvas = rppgCanvasRef.current;
+        if (!video || !canvas || video.readyState < 2 || video.videoWidth === 0) return;
+
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        // 1. Forehead Brightness & Glare Check on every frame
+        if (!alignWarningRef.current) {
+          const lighting = evaluateForeheadLighting(
+            ctx,
+            lastLandmarksRef.current,
+            canvas.width,
+            canvas.height
+          );
+          if (lighting.status !== 'ok') {
+            lightingWarningRef.current = lighting.message;
+            syncScanGuardrails();
+            return; // Pause scan timer & discard corrupted frame
+          } else if (lightingWarningRef.current !== null) {
+            lightingWarningRef.current = null;
+            syncScanGuardrails();
+          }
+        }
+
+        // 2. Discard unstable frames if face is misaligned, lighting failed, or head is moving/talking
+        if (!isFaceDetectedRef.current) return;
+
+        const rgb = extractRGBChannelsROI(
+          ctx,
+          lastLandmarksRef.current,
+          canvas.width,
+          canvas.height
+        );
+
+        if (rgb.g > 0) {
+          rppgBufferRef.current.push({
+            timestamp: performance.now(),
+            rawGreen: rgb.g,
+            rawRed: rgb.r,
+            rawBlue: rgb.b
+          });
+          if (rppgBufferRef.current.length > 450) {
+            rppgBufferRef.current.shift();
+          }
+
+          // Periodically recompute live vitals from actual optical rPPG signal
+          if (rppgBufferRef.current.length >= 30 && rppgBufferRef.current.length % 15 === 0) {
+            const est = computeVitalsFromRPPG(rppgBufferRef.current);
+            setLiveVitals((prev) => ({
+              ...prev,
+              ...est,
+              timestamp: new Date().toLocaleTimeString()
+            }));
+          }
+        }
+      }, 50);
+    }
+
+    return () => {
+      if (sampleTimer) clearInterval(sampleTimer);
+    };
+  }, [isOpen, step, cameraActive]);
+
+  // Scanning Progress Loop (Exact 20 seconds duration with Auto Pause / Resume & Final rPPG Computation)
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isOpen && step === 'scanning') {
       const interval = 100;
       const stepIncrement = 0.5; // 0.5% per 100ms = exactly 20,000ms (20 seconds)
       timer = setInterval(() => {
-        // Pause timer and vital calculation if no face is detected
         if (!isFaceDetectedRef.current) {
           return;
         }
@@ -1110,21 +1322,30 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const next = prev + stepIncrement;
           if (next >= 100) {
             clearInterval(timer);
-            setStep('completed');
             stopCamera();
+
+            // Finalize vital metrics from full captured rPPG ROI buffer
+            const finalEst = computeVitalsFromRPPG(rppgBufferRef.current);
+            const finalTimestamp = new Date().toLocaleTimeString();
+            const finalVitals: VitalReadings = {
+              heartRate: finalEst.heartRate,
+              spo2: finalEst.spo2,
+              stressLevel: finalEst.stressLevel,
+              stressScore: finalEst.stressScore,
+              respiratoryRate: finalEst.respiratoryRate,
+              hrv: finalEst.hrv,
+              systolic: finalEst.systolic,
+              diastolic: finalEst.diastolic,
+              bloodPressure: finalEst.bloodPressure,
+              timestamp: finalTimestamp
+            };
+            setLiveVitals(finalVitals);
+            setStep('completed');
 
             const cleanFullName = String(patientInfo.fullName || 'Anonymous Patient').trim();
             const cleanPhone = String(patientInfo.phone || 'N/A').trim();
             const cleanCity = String(patientInfo.city || 'N/A').trim();
             const cleanGender = String(patientInfo.gender || 'Other').trim();
-
-            const heartRateNum = Number(liveVitals.heartRate) || 72;
-            const spo2Num = Number(liveVitals.spo2) || 98;
-            const respRateNum = Number(liveVitals.respiratoryRate) || 16;
-            const stressLevelStr = String(liveVitals.stressLevel || 'Normal').trim();
-            const bpEst = estimateBloodPressure(heartRateNum, liveVitals.hrv || 50);
-
-            console.log("Vital Lens scan finished for:", cleanFullName);
 
             const record = {
               id: `REC-${Date.now().toString(36).toUpperCase()}-${Math.floor(Math.random() * 899 + 100)}`,
@@ -1132,16 +1353,16 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               phone: cleanPhone,
               city: cleanCity,
               gender: cleanGender,
-              heartRate: heartRateNum,
-              spo2: spo2Num,
-              respiratoryRate: respRateNum,
-              stressLevel: stressLevelStr,
-              stressScore: liveVitals.stressScore,
-              hrv: liveVitals.hrv,
-              systolic: bpEst.systolic,
-              diastolic: bpEst.diastolic,
-              bloodPressure: bpEst.bloodPressure,
-              timestamp: liveVitals.timestamp,
+              heartRate: finalVitals.heartRate,
+              spo2: finalVitals.spo2,
+              respiratoryRate: finalVitals.respiratoryRate,
+              stressLevel: finalVitals.stressLevel,
+              stressScore: finalVitals.stressScore,
+              hrv: finalVitals.hrv,
+              systolic: finalVitals.systolic,
+              diastolic: finalVitals.diastolic,
+              bloodPressure: finalVitals.bloodPressure,
+              timestamp: finalTimestamp,
               createdAt: Date.now()
             };
             try {
@@ -1151,11 +1372,10 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               // Safe storage fallback
             }
 
-            // Sync to Supabase vital_scans table with clean payload
+            // Sync to Supabase vital_scans table
             (async () => {
               try {
-                console.log("Attempting to insert into Supabase...");
-                const { data, error } = await supabase
+                await supabase
                   .from('vital_scans')
                   .insert([
                     {
@@ -1163,86 +1383,32 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                       phone_number: cleanPhone,
                       city: cleanCity,
                       gender: cleanGender,
-                      heart_rate: heartRateNum,
-                      spo2: spo2Num,
-                      respiratory_rate: respRateNum,
-                      stress_level: stressLevelStr
+                      heart_rate: finalVitals.heartRate,
+                      spo2: finalVitals.spo2,
+                      respiratory_rate: finalVitals.respiratoryRate,
+                      stress_level: finalVitals.stressLevel
                     }
                   ])
                   .select();
-
-                console.log("Supabase insert response data:", data, "error:", error);
-
-                if (error) {
-                  try {
-                    alert("Error: " + error.message);
-                  } catch {
-                    // Alert fallback
-                  }
-                } else {
-                  try {
-                    alert("Vital Lens Scan Saved Successfully!");
-                  } catch {
-                    // Alert fallback
-                  }
-                }
-              } catch (err: any) {
-                console.log("Supabase insert response data:", null, "error:", err);
-                try {
-                  alert("Error: " + (err?.message || "Unknown error"));
-                } catch {
-                  // Alert fallback
-                }
+              } catch {
+                // Local fallback already persisted
               }
             })();
 
             if (onScanComplete) {
-              onScanComplete({
-                ...liveVitals,
-                systolic: bpEst.systolic,
-                diastolic: bpEst.diastolic,
-                bloodPressure: bpEst.bloodPressure
-              }, patientInfo);
+              onScanComplete(finalVitals, patientInfo);
             }
             return 100;
           }
 
-          // Dynamic status updates based on progress (smoothly calibrated for 20s)
           if (next < 25) {
             setScanStatus('Aligning face within optical frame...');
           } else if (next < 50) {
-            setScanStatus('Detecting micro-vascular blood flow (rPPG)...');
-            setLiveVitals((v) => {
-              const newHr = Math.floor(70 + Math.random() * 5);
-              const bp = estimateBloodPressure(newHr, v.hrv);
-              return {
-                ...v,
-                heartRate: newHr,
-                spo2: 98,
-                respiratoryRate: 15 + Math.floor(Math.random() * 2),
-                systolic: bp.systolic,
-                diastolic: bp.diastolic,
-                bloodPressure: bp.bloodPressure
-              };
-            });
+            setScanStatus('Extracting forehead & cheek rPPG blood-flow signals...');
           } else if (next < 75) {
-            setScanStatus('Measuring heart rate variability & blood pressure pulse waves...');
-            setLiveVitals((v) => {
-              const newHr = Math.floor(72 + Math.random() * 4);
-              const bp = estimateBloodPressure(newHr, 52);
-              return {
-                ...v,
-                heartRate: newHr,
-                spo2: 99,
-                stressScore: Math.floor(20 + Math.random() * 4),
-                respiratoryRate: 16,
-                systolic: bp.systolic,
-                diastolic: bp.diastolic,
-                bloodPressure: bp.bloodPressure
-              };
-            });
+            setScanStatus('Measuring HRV, SpO2 & blood pressure pulse waves...');
           } else {
-            setScanStatus('Calibrating biometric precision & blood pressure estimation...');
+            setScanStatus('Calibrating biometric precision & final summary...');
           }
 
           return next;
@@ -1253,7 +1419,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isOpen, step, onScanComplete, liveVitals]);
+  }, [isOpen, step, onScanComplete]);
 
   // Clean up camera on unmount
   useEffect(() => {
@@ -1655,58 +1821,105 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                   </div>
                 </div>
 
-                {/* Prominent Warning Overlay Banner when Full Face is Unaligned / Cut-off / Missing */}
+                {/* Prominent Warning Overlay Banner when Face is Unaligned / Tilted / Out of Frame */}
                 {!isFaceDetected && (
                   <div className="absolute inset-x-3 top-14 z-30 flex items-center justify-center pointer-events-none animate-in fade-in zoom-in-95 duration-200">
                     <div className="bg-rose-950/95 border-2 border-rose-500 text-rose-100 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-3 max-w-md text-center">
                       <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
                       <p className="text-xs sm:text-sm font-semibold leading-snug">
-                        {faceWarning || '⚠️ Position your full face inside the center oval to continue scanning'}
+                        {faceWarning || 'Please align your face inside the frame'}
                       </p>
                     </div>
                   </div>
                 )}
 
-                {/* Live Top HUD Tag */}
+                {/* Live Top HUD Tag with Progress Ring */}
                 <div className="absolute top-3 left-3 right-3 flex items-center justify-between text-[11px] font-semibold text-white pointer-events-none px-2 z-20">
                   <div className="flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-xs px-2.5 py-1 rounded-full border border-slate-700">
                     <span
                       className={`w-2 h-2 rounded-full ${
-                        isFaceDetected ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
+                        isFaceDetected ? 'bg-emerald-400 animate-ping' : 'bg-rose-500'
                       }`}
                     ></span>
                     <span>
                       {isFaceDetected
-                        ? `ALIGNED • ${cameraFacingMode === 'user' ? 'FRONT CAMERA' : 'BACK CAMERA'}`
-                        : 'PAUSED • FULL FACE REQUIRED'}
+                        ? `TRACKING • ${cameraFacingMode === 'user' ? 'FRONT CAMERA' : 'BACK CAMERA'}`
+                        : 'PAUSED • HOLD STEADY'}
                     </span>
                   </div>
                   <div
-                    className={`px-2.5 py-1 rounded-full border ${
+                    className={`flex items-center gap-2 px-2.5 py-1 rounded-full border ${
                       isFaceDetected
-                        ? 'bg-purple-950/80 text-purple-300 border-purple-700'
-                        : 'bg-rose-950/80 text-rose-300 border-rose-700 font-bold'
+                        ? 'bg-purple-950/85 text-cyan-300 border-purple-700'
+                        : 'bg-rose-950/85 text-rose-300 border-rose-700 font-bold'
                     }`}
                   >
-                    {isFaceDetected ? `${Math.round(progress)}% Complete` : 'Paused'}
+                    <svg className="w-5 h-5 -rotate-90" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="9" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2.5" />
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="9"
+                        fill="none"
+                        stroke={isFaceDetected ? '#22d3ee' : '#f43f5e'}
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeDasharray={56.55}
+                        strokeDashoffset={56.55 - (56.55 * progress) / 100}
+                        className="transition-all duration-150"
+                      />
+                    </svg>
+                    <span>{isFaceDetected ? `${Math.round(progress)}%` : 'Paused'}</span>
                   </div>
                 </div>
 
                 {/* Bottom Status Feed on Viewport */}
                 <div className="absolute bottom-3 inset-x-3 text-center pointer-events-none">
                   <div className="inline-block bg-slate-900/90 backdrop-blur-xs border border-purple-500/30 px-3.5 py-1.5 rounded-xl text-xs font-medium text-slate-200">
-                    {scanStatus}
+                    {isFaceDetected ? scanStatus : faceWarning || 'Scan paused — waiting for stable conditions...'}
                   </div>
                 </div>
               </div>
 
-              {/* Animated Progress Bar */}
-              <div className="space-y-1.5">
-                <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-400 rounded-full transition-all duration-200 shadow-sm shadow-purple-500/50"
-                    style={{ width: `${progress}%` }}
-                  />
+              {/* Live Progress Bar & Ring Summary */}
+              <div className="flex items-center gap-3">
+                <div className="relative w-10 h-10 shrink-0 flex items-center justify-center">
+                  <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="15" fill="none" stroke="#1e293b" strokeWidth="3.5" />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="15"
+                      fill="none"
+                      stroke={isFaceDetected ? '#22d3ee' : '#f43f5e'}
+                      strokeWidth="3.5"
+                      strokeLinecap="round"
+                      strokeDasharray={94.25}
+                      strokeDashoffset={94.25 - (94.25 * progress) / 100}
+                      className="transition-all duration-150"
+                    />
+                  </svg>
+                  <span className="absolute text-[10px] font-bold text-white">
+                    {Math.round(progress)}%
+                  </span>
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className={isFaceDetected ? 'text-cyan-300 font-semibold' : 'text-rose-400 font-semibold'}>
+                      {isFaceDetected ? 'Face Locked & Stable' : 'Scan Paused — Unstable Signal'}
+                    </span>
+                    <span className="text-slate-400">{Math.round(progress)}% / 100%</span>
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5">
+                    <div
+                      className={`h-full rounded-full transition-all duration-200 ${
+                        isFaceDetected
+                          ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-400 shadow-sm shadow-purple-500/50'
+                          : 'bg-rose-500/80'
+                      }`}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1830,10 +2043,10 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 text-center">
                   <div className="text-xs text-amber-400 font-semibold mb-1 flex items-center justify-center gap-1">
                     <Flame className="w-3.5 h-3.5" />
-                    <span>Stress Index</span>
+                    <span>Stress Level</span>
                   </div>
-                  <div className="text-2xl font-black text-white">{liveVitals.stressScore}</div>
-                  <div className="text-[10px] text-slate-400">Low / Relaxed</div>
+                  <div className="text-2xl font-black text-white">{liveVitals.stressLevel}</div>
+                  <div className="text-[10px] text-slate-400">Index Score: {liveVitals.stressScore}/100</div>
                 </div>
 
                 {/* Respiration */}
@@ -1851,7 +2064,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               <div className="bg-slate-900/90 border border-emerald-900/40 rounded-xl p-3.5 flex items-center gap-3">
                 <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                 <div className="text-xs text-slate-300">
-                  <span className="font-semibold text-white">All vital indicators are within standard benchmark ranges.</span> Your biometric screening card is ready for download.
+                  <span className="font-semibold text-white">Medical Summary Ready.</span> Biometric readings computed via forehead & cheek optical rPPG waveforms.
                 </div>
               </div>
 
@@ -1868,13 +2081,15 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setStep('consent');
+                    rppgBufferRef.current = [];
+                    lastLandmarksRef.current = null;
                     setProgress(0);
+                    startScan();
                   }}
                   className="py-3 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs sm:text-sm rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <RefreshCw className="w-4 h-4" />
-                  <span>Scan Again</span>
+                  <span>Retake Scan</span>
                 </button>
                 <button
                   type="button"
