@@ -23,6 +23,7 @@ import { VitalLensModal } from './components/VitalLensModal';
 import { AdminCommandCenter } from './components/AdminCommandCenter';
 import { TeamsLogin } from './components/TeamsLogin';
 import { TeamsAdminDashboard } from './components/TeamsAdminDashboard';
+import { DarTeamDashboard } from './components/DarTeamDashboard';
 
 const getAppRoute = (): string => {
   if (typeof window === 'undefined') return '/';
@@ -34,6 +35,9 @@ const getAppRoute = (): string => {
   }
   if (p.includes('teams-admin') || h.includes('teams-admin') || s.includes('teams-admin')) {
     return '/teams-admin';
+  }
+  if (p.includes('teams-dar') || h.includes('teams-dar') || s.includes('teams-dar') || p.includes('dar')) {
+    return '/teams-dar';
   }
   if (p.includes('teams') || h.includes('teams') || s.includes('teams')) {
     return '/teams';
@@ -63,6 +67,8 @@ export default function App() {
         window.history.pushState({}, '', '/command-center');
       } else if (path === '/teams-admin') {
         window.history.pushState({}, '', '/teams-admin');
+      } else if (path === '/teams-dar') {
+        window.history.pushState({}, '', '/teams-dar');
       } else if (path === '/teams') {
         window.history.pushState({}, '', '/teams');
       } else {
@@ -70,6 +76,7 @@ export default function App() {
         if (
           window.location.hash.toLowerCase().includes('command-center') ||
           window.location.hash.toLowerCase().includes('teams-admin') ||
+          window.location.hash.toLowerCase().includes('teams-dar') ||
           window.location.hash.toLowerCase().includes('teams')
         ) {
           window.location.hash = '';
@@ -173,12 +180,34 @@ export default function App() {
     );
   }
 
+  if (currentPath === '/teams-dar') {
+    const loggedUser = typeof window !== 'undefined' ? sessionStorage.getItem('nhealth_logged_user') || 'dar.staff' : 'dar.staff';
+    return (
+      <DarTeamDashboard
+        currentUser={loggedUser}
+        onLogout={() => {
+          sessionStorage.removeItem('nhealth_logged_user');
+          sessionStorage.removeItem('nhealth_user_role');
+          navigate('/teams');
+        }}
+        onBackToHome={() => navigate('/')}
+      />
+    );
+  }
+
   if (currentPath === '/teams') {
     return (
       <TeamsLogin
         onBackToHome={() => navigate('/')}
         onNavigateToAdmin={() => navigate('/teams-admin')}
-        onLoginSuccess={() => navigate('/teams-admin')}
+        onLoginSuccess={(username, role) => {
+          if (role && role.toLowerCase().includes('admin')) {
+            navigate('/teams-admin');
+          } else {
+            // DAR Team or other staff team dashboard
+            navigate('/teams-dar');
+          }
+        }}
       />
     );
   }

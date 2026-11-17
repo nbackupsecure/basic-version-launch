@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   Lock,
@@ -16,9 +16,15 @@ import {
   AlertTriangle,
   CheckCircle2,
   Eye,
-  EyeOff
+  EyeOff,
+  Building,
+  FileSpreadsheet,
+  Clock,
+  RotateCcw,
+  RefreshCw,
+  Layers
 } from 'lucide-react';
-import { syncEmployeeToGoogleSheets } from '../lib/googleSheets';
+import { syncEmployeeToGoogleSheets, fetchDarRecordsFromGoogleSheets } from '../lib/googleSheets';
 
 export interface TeamEmployee {
   id: string;
@@ -78,9 +84,90 @@ export const TeamsAdminDashboard: React.FC<TeamsAdminDashboardProps> = ({
     ];
   });
 
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'suspended'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'active' | 'suspended' | 'dar_accepted' | 'dar_all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // DAR Submissions across all team members
+  const [darRecords, setDarRecords] = useState<any[]>(() => {
+    try {
+      const stored = localStorage.getItem('nhealth_dar_submissions');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [
+      {
+        slNo: 101,
+        organisationName: 'Sri Care PolyClinic & Labs',
+        department: 'Labs',
+        designation: 'Managing Director',
+        personName: 'Dr. Srinivas Rao',
+        contactNumber: '+91 9848012345',
+        city: 'Hyderabad',
+        state: 'Telangana',
+        pincode: '500034',
+        numberOfCenters: '2',
+        location: 'Banjara Hills',
+        address: 'Rd No 12, MLA Colony, Banjara Hills',
+        remarks: 'Network empanelment complete.',
+        status: 'Accepted',
+        timestamp: '10/11/2026, 11:30:00 AM',
+        submittedBy: 'kiran.dar'
+      },
+      {
+        slNo: 102,
+        organisationName: 'City Trauma Emergency Hub',
+        department: 'Ambulance Services',
+        designation: 'Operations Lead',
+        personName: 'K. Mahesh',
+        contactNumber: '+91 9700124455',
+        city: 'Secunderabad',
+        state: 'Telangana',
+        pincode: '500003',
+        numberOfCenters: '5',
+        location: 'Clock Tower',
+        address: 'MG Road, Secunderabad',
+        remarks: 'Needs tariff revision and insurance SLA review.',
+        status: 'Recall',
+        timestamp: '10/11/2026, 02:15:00 PM',
+        submittedBy: 'rohit.dar'
+      },
+      {
+        slNo: 103,
+        organisationName: 'Prime Diagnostic & MRI Center',
+        department: 'Imaging Centers',
+        designation: 'Chief Radiologist',
+        personName: 'Dr. Aarti Nair',
+        contactNumber: '+91 9123456780',
+        city: 'Bengaluru',
+        state: 'Karnataka',
+        pincode: '560001',
+        numberOfCenters: '1',
+        location: 'Indiranagar',
+        address: '100 Feet Rd, Indiranagar',
+        remarks: 'Contract signed for 24/7 MRI and CT reporting.',
+        status: 'Accepted',
+        timestamp: '10/11/2026, 04:00:00 PM',
+        submittedBy: 'priya.dar'
+      }
+    ];
+  });
+
+  const refreshDarFromSheets = async () => {
+    try {
+      const res = await fetchDarRecordsFromGoogleSheets();
+      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setDarRecords(res.data);
+        localStorage.setItem('nhealth_dar_submissions', JSON.stringify(res.data));
+        triggerToast(`Synced ${res.data.length} global DAR records from Google Sheets.`);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (isAdminAuth) {
+      refreshDarFromSheets();
+    }
+  }, [isAdminAuth]);
 
   // 3. Modal Form State for Create & Edit
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -418,30 +505,50 @@ export const TeamsAdminDashboard: React.FC<TeamsAdminDashboardProps> = ({
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* KPI Counter Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        {/* KPI Counter Cards - Staff & Global DAR Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4">
             <span className="text-xs text-slate-400 font-semibold uppercase">Total Staff</span>
             <div className="text-2xl font-black text-white mt-1">{employees.length}</div>
             <span className="text-[10px] text-slate-500">Registered accounts</span>
           </div>
 
-          <div className="bg-slate-900/90 border border-amber-900/40 rounded-2xl p-4">
-            <span className="text-xs text-amber-400 font-semibold uppercase">Pending Requests</span>
-            <div className="text-2xl font-black text-amber-300 mt-1">{pendingCount}</div>
-            <span className="text-[10px] text-amber-500/80">Requires admin review</span>
+          <div className="bg-slate-900/90 border border-emerald-900/40 rounded-2xl p-4 cursor-pointer hover:border-emerald-500/50 transition-all" onClick={() => setActiveTab('dar_accepted')}>
+            <span className="text-xs text-emerald-400 font-semibold uppercase flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Accepted DAR
+            </span>
+            <div className="text-2xl font-black text-emerald-300 mt-1">
+              {darRecords.filter((r) => r.status === 'Accepted').length}
+            </div>
+            <span className="text-[10px] text-emerald-500/80">Closed acquisitions</span>
           </div>
 
-          <div className="bg-slate-900/90 border border-emerald-900/40 rounded-2xl p-4">
-            <span className="text-xs text-emerald-400 font-semibold uppercase">Active Employees</span>
-            <div className="text-2xl font-black text-emerald-300 mt-1">{activeCount}</div>
-            <span className="text-[10px] text-emerald-500/80">Authorized access</span>
+          <div className="bg-slate-900/90 border border-amber-900/40 rounded-2xl p-4 cursor-pointer hover:border-amber-500/50 transition-all" onClick={() => setActiveTab('pending')}>
+            <span className="text-xs text-amber-400 font-semibold uppercase">Pending</span>
+            <div className="text-2xl font-black text-amber-300 mt-1">
+              {pendingCount + darRecords.filter((r) => r.status === 'Pending').length}
+            </div>
+            <span className="text-[10px] text-amber-500/80">Staff + DAR Pending</span>
+          </div>
+
+          <div className="bg-slate-900/90 border border-teal-900/40 rounded-2xl p-4 cursor-pointer hover:border-teal-500/50 transition-all" onClick={() => setActiveTab('dar_all')}>
+            <span className="text-xs text-teal-400 font-semibold uppercase flex items-center gap-1">
+              <RotateCcw className="w-3.5 h-3.5" />
+              DAR Recalls
+            </span>
+            <div className="text-2xl font-black text-teal-300 mt-1">
+              {darRecords.filter((r) => r.status === 'Recall').length}
+            </div>
+            <span className="text-[10px] text-teal-500/80">Under re-engagement</span>
           </div>
 
           <div className="bg-slate-900/90 border border-rose-900/40 rounded-2xl p-4">
-            <span className="text-xs text-rose-400 font-semibold uppercase">Suspended</span>
-            <div className="text-2xl font-black text-rose-300 mt-1">{suspendedCount}</div>
-            <span className="text-[10px] text-rose-500/80">Access revoked</span>
+            <span className="text-xs text-rose-400 font-semibold uppercase">Suspended / Rejected</span>
+            <div className="text-2xl font-black text-rose-300 mt-1">
+              {suspendedCount + darRecords.filter((r) => r.status === 'Rejected').length}
+            </div>
+            <span className="text-[10px] text-rose-500/80">Revoked / Disqualified</span>
           </div>
         </div>
 
@@ -459,7 +566,31 @@ export const TeamsAdminDashboard: React.FC<TeamsAdminDashboardProps> = ({
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                All ({employees.length})
+                Staff ({employees.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dar_accepted')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'dar_accepted'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                    : 'bg-slate-800 text-emerald-400 hover:bg-slate-700'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Accepted Acquisitions ({darRecords.filter((r) => r.status === 'Accepted').length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dar_all')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'dar_all'
+                    ? 'bg-teal-600 text-white shadow-md shadow-teal-600/30'
+                    : 'bg-slate-800 text-teal-400 hover:bg-slate-700'
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>All Acquisitions ({darRecords.length})</span>
               </button>
               <button
                 type="button"
@@ -470,7 +601,7 @@ export const TeamsAdminDashboard: React.FC<TeamsAdminDashboardProps> = ({
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                Pending ({pendingCount})
+                Pending Staff ({pendingCount})
               </button>
               <button
                 type="button"
@@ -481,7 +612,7 @@ export const TeamsAdminDashboard: React.FC<TeamsAdminDashboardProps> = ({
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                 }`}
               >
-                Active ({activeCount})
+                Active Staff ({activeCount})
               </button>
               <button
                 type="button"
@@ -529,9 +660,99 @@ export const TeamsAdminDashboard: React.FC<TeamsAdminDashboardProps> = ({
             </div>
           )}
 
-          {/* Table */}
-          <div className="overflow-x-auto rounded-2xl border border-slate-800">
-            <table className="w-full text-left border-collapse text-xs">
+          {/* Table Container */}
+          {activeTab === 'dar_accepted' || activeTab === 'dar_all' ? (
+            <div className="overflow-x-auto rounded-2xl border border-slate-800">
+              <div className="p-3 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    {activeTab === 'dar_accepted' ? 'Accepted Healthcare Acquisitions' : 'All Data Acquisition Records'}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    (Total: {darRecords.filter((r) => activeTab === 'dar_all' || r.status === 'Accepted').length})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={refreshDarFromSheets}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3 text-teal-400" />
+                  <span>Sync Google Sheets</span>
+                </button>
+              </div>
+
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 font-semibold uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-3">Sl.No</th>
+                    <th className="py-3 px-3">Organisation Name</th>
+                    <th className="py-3 px-3">Department</th>
+                    <th className="py-3 px-3">Contact Person</th>
+                    <th className="py-3 px-3">Phone</th>
+                    <th className="py-3 px-3">Location / City</th>
+                    <th className="py-3 px-3">Submitted By</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3">Remarks / Follow-up</th>
+                    <th className="py-3 px-3 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {darRecords
+                    .filter((r) => {
+                      if (activeTab === 'dar_accepted' && r.status !== 'Accepted') return false;
+                      if (searchQuery.trim()) {
+                        const q = searchQuery.toLowerCase();
+                        return (
+                          r.organisationName?.toLowerCase().includes(q) ||
+                          r.personName?.toLowerCase().includes(q) ||
+                          r.department?.toLowerCase().includes(q) ||
+                          r.submittedBy?.toLowerCase().includes(q)
+                        );
+                      }
+                      return true;
+                    })
+                    .map((dar) => (
+                      <tr key={`${dar.slNo}-${dar.timestamp}`} className="hover:bg-slate-800/40">
+                        <td className="py-3 px-3 font-mono font-bold text-teal-300">#{dar.slNo}</td>
+                        <td className="py-3 px-3 font-bold text-white whitespace-nowrap">{dar.organisationName}</td>
+                        <td className="py-3 px-3 text-teal-400">{dar.department}</td>
+                        <td className="py-3 px-3 text-slate-200">{dar.personName}</td>
+                        <td className="py-3 px-3 text-slate-400 font-mono">{dar.contactNumber}</td>
+                        <td className="py-3 px-3 text-slate-400">{dar.city || dar.location || '—'}</td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-teal-300 border border-slate-700">
+                            @{dar.submittedBy || 'staff'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                              dar.status === 'Accepted'
+                                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60'
+                                : dar.status === 'Recall'
+                                ? 'bg-amber-950/80 text-amber-300 border-amber-800/60'
+                                : 'bg-blue-950/80 text-blue-300 border-blue-800/60'
+                            }`}
+                          >
+                            {dar.status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-300 max-w-xs truncate" title={dar.remarks}>
+                          {dar.remarks || '—'}
+                        </td>
+                        <td className="py-3 px-3 text-right text-slate-500 text-[10px] whitespace-nowrap">
+                          {dar.timestamp}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-800">
+              <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-950/90 text-slate-400 border-b border-slate-800 font-semibold uppercase tracking-wider text-[11px]">
                   <th className="py-3 px-4">Staff ID</th>
@@ -660,6 +881,7 @@ export const TeamsAdminDashboard: React.FC<TeamsAdminDashboardProps> = ({
               </tbody>
             </table>
           </div>
+        )}
         </div>
       </main>
 

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Lock, User, ShieldCheck, ArrowLeft, AlertCircle, Eye, EyeOff } from 'lucide-react';
-import { logTeamsActivityToGoogleSheets } from '../lib/googleSheets';
+import { logTeamsActivityToGoogleSheets, verifyEmployeeInGoogleSheets } from '../lib/googleSheets';
 
 interface TeamsLoginProps {
   onBackToHome: () => void;
   onNavigateToAdmin?: () => void;
-  onLoginSuccess?: (username: string) => void;
+  onLoginSuccess?: (username: string, role?: string) => void;
 }
 
 export const TeamsLogin: React.FC<TeamsLoginProps> = ({
@@ -37,28 +37,49 @@ export const TeamsLogin: React.FC<TeamsLoginProps> = ({
     setIsLoading(true);
 
     try {
-      // 1. Log or verify employee credential with Google Sheets
-      const syncResult = await logTeamsActivityToGoogleSheets({
+      // 1. Verify or query role from Google Sheets
+      const verifyRes = await verifyEmployeeInGoogleSheets({
+        username: username.trim(),
+        password
+      });
+
+      // Role determination: priority to Google Sheet role, with sensible defaults for local testing
+      let resolvedRole = 'DAR Team';
+      const returnedRole = verifyRes?.data?.role || '';
+
+      if (
+        returnedRole.toLowerCase().includes('admin') ||
+        username.trim().toLowerCase().includes('admin') ||
+        username.trim().toLowerCase() === 'management'
+      ) {
+        resolvedRole = 'admin';
+      } else if (
+        returnedRole.toLowerCase().includes('dar') ||
+        username.trim().toLowerCase().includes('dar') ||
+        returnedRole
+      ) {
+        resolvedRole = returnedRole || 'DAR Team';
+      }
+
+      // Log activity to Google Sheets
+      await logTeamsActivityToGoogleSheets({
         employeeId: username.trim().toLowerCase(),
         employeeName: username.trim(),
         activityType: 'LOGIN',
-        details: 'Staff member authenticated into Nhealth Teams Portal.'
+        details: `Staff authenticated into Nhealth Teams Portal as [${resolvedRole}].`
       });
 
-      if (!syncResult.success && syncResult.message && !syncResult.message.includes('locally')) {
-        console.warn('Google Sheets sync notice:', syncResult.message);
-      }
-
-      // Mark admin session active in session storage so admin dashboard unlocks automatically
-      sessionStorage.setItem('nhealth_teams_admin_auth', 'true');
+      // Save user session and role in sessionStorage
+      sessionStorage.setItem('nhealth_teams_admin_auth', resolvedRole === 'admin' ? 'true' : 'false');
       sessionStorage.setItem('nhealth_logged_user', username.trim());
+      sessionStorage.setItem('nhealth_user_role', resolvedRole);
 
       setIsLoggedIn(true);
 
-      // Direct redirection to Admin Dashboard / Employee Portal
+      // Direct redirection based on role
       if (onLoginSuccess) {
-        onLoginSuccess(username.trim());
-      } else if (onNavigateToAdmin) {
+        onLoginSuccess(username.trim(), resolvedRole);
+      } else if (resolvedRole === 'admin' && onNavigateToAdmin) {
         onNavigateToAdmin();
       }
     } catch (err: any) {

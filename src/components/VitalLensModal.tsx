@@ -106,6 +106,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const detectorRef = useRef<any>(null);
   const isFaceDetectedRef = useRef<boolean>(true);
   const faceMissCountRef = useRef<number>(0);
@@ -559,6 +560,47 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
 
     const vw = video.videoWidth;
     const vh = video.videoHeight;
+    const rect = video.getBoundingClientRect();
+    const rw = rect.width || vw;
+    const rh = rect.height || vh;
+
+    // Responsive threshold relaxation (15-20% wider tolerance on mobile & tablet < 1024px)
+    const isMobileOrTablet = typeof window !== 'undefined' && window.innerWidth < 1024;
+    const isMirrored = cameraFacingMode === 'user';
+
+    // Compute CSS object-fit: cover scaling & crop offsets
+    const coverScale = Math.max(rw / vw, rh / vh);
+    const scaledW = vw * coverScale;
+    const scaledH = vh * coverScale;
+    const cropOffsetX = (scaledW - rw) / 2;
+    const cropOffsetY = (scaledH - rh) / 2;
+
+    // Dynamic Coordinate Normalization: map raw video normalized [0..1] to visible viewport [0..1]
+    const normalizeToViewport = (nx: number, ny: number) => {
+      const vx = (nx * scaledW - cropOffsetX) / rw;
+      const vy = (ny * scaledH - cropOffsetY) / rh;
+      return {
+        x: isMirrored ? 1 - vx : vx,
+        y: vy
+      };
+    };
+
+    // Sync overlay canvas dimensions & draw subtle alignment feedback
+    if (overlayCanvasRef.current) {
+      const oc = overlayCanvasRef.current;
+      if (oc.width !== vw || oc.height !== vh) {
+        oc.width = vw;
+        oc.height = vh;
+      }
+    }
+
+    // Margin thresholds relaxed by ~15-20% on mobile/tablet screens
+    const edgeMin = isMobileOrTablet ? -0.14 : 0.02;
+    const edgeMax = isMobileOrTablet ? 1.14 : 0.98;
+    const centerMinX = isMobileOrTablet ? 0.14 : 0.28;
+    const centerMaxX = isMobileOrTablet ? 0.86 : 0.72;
+    const centerMinY = isMobileOrTablet ? 0.10 : 0.22;
+    const centerMaxY = isMobileOrTablet ? 0.90 : 0.78;
 
     // 1. Check MediaPipe FaceMesh / FaceLandmarker if loaded or window.FaceDetector
     try {
@@ -606,26 +648,32 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             }
           }
 
-          // Key anatomical 3D landmark nodes
-          const forehead = landmarks[10];
-          const chin = landmarks[152];
-          const leftCheek = landmarks[234];
-          const rightCheek = landmarks[454];
-          const nose = landmarks[1];
-          const leftEye = landmarks[33];
-          const rightEye = landmarks[263];
+          // Key anatomical 3D landmark nodes normalized to rendered viewport
+          const foreheadRaw = landmarks[10];
+          const chinRaw = landmarks[152];
+          const leftCheekRaw = landmarks[234];
+          const rightCheekRaw = landmarks[454];
+          const noseRaw = landmarks[1];
+          const leftEyeRaw = landmarks[33];
+          const rightEyeRaw = landmarks[263];
+
+          const forehead = normalizeToViewport(foreheadRaw.x, foreheadRaw.y);
+          const chin = normalizeToViewport(chinRaw.x, chinRaw.y);
+          const leftCheek = normalizeToViewport(leftCheekRaw.x, leftCheekRaw.y);
+          const rightCheek = normalizeToViewport(rightCheekRaw.x, rightCheekRaw.y);
+          const nose = normalizeToViewport(noseRaw.x, noseRaw.y);
+          const leftEye = normalizeToViewport(leftEyeRaw.x, leftEyeRaw.y);
+          const rightEye = normalizeToViewport(rightEyeRaw.x, rightEyeRaw.y);
 
           // 2. Flat Surface / Photo / Screen Spoofing Prevention using 3D Z-Depth
-          // Natural human faces have distinct positive Z depth protrusion for the nose tip relative to cheek/eye planes
-          if (typeof nose.z === 'number' && typeof leftCheek.z === 'number' && typeof rightCheek.z === 'number') {
-            const cheekAvgZ = (leftCheek.z + rightCheek.z) / 2;
-            const eyeAvgZ = (typeof leftEye.z === 'number' && typeof rightEye.z === 'number') 
-              ? (leftEye.z + rightEye.z) / 2 
+          if (typeof noseRaw.z === 'number' && typeof leftCheekRaw.z === 'number' && typeof rightCheekRaw.z === 'number') {
+            const cheekAvgZ = (leftCheekRaw.z + rightCheekRaw.z) / 2;
+            const eyeAvgZ = (typeof leftEyeRaw.z === 'number' && typeof rightEyeRaw.z === 'number')
+              ? (leftEyeRaw.z + rightEyeRaw.z) / 2
               : cheekAvgZ;
             const baselineZ = (cheekAvgZ + eyeAvgZ) / 2;
-            const zDepthDiff = Math.abs(baselineZ - nose.z);
+            const zDepthDiff = Math.abs(baselineZ - noseRaw.z);
 
-            // Flat photos or screen displays have nearly zero Z variance across 3D coordinates
             if (zDepthDiff < 0.018) {
               return {
                 isValid: false,
@@ -635,10 +683,15 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             }
           }
 
-          // Full face crop check: check if outer landmarks touch frame edges
+          const minFaceX = Math.min(leftCheek.x, rightCheek.x);
+          const maxFaceX = Math.max(leftCheek.x, rightCheek.x);
+          const minFaceY = Math.min(forehead.y, chin.y);
+          const maxFaceY = Math.max(forehead.y, chin.y);
+
+          // Full face crop check normalized against rendered viewport & responsive margin
           if (
-            forehead.y < 0.02 || chin.y > 0.98 ||
-            leftCheek.x < 0.02 || rightCheek.x > 0.98
+            minFaceY < edgeMin || maxFaceY > edgeMax ||
+            minFaceX < edgeMin || maxFaceX > edgeMax
           ) {
             return {
               isValid: false,
@@ -647,10 +700,10 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             };
           }
 
-          // Relaxed Center Check (allows 22% margin around 0.5 center)
-          const centerX = (leftCheek.x + rightCheek.x) / 2;
-          const centerY = (forehead.y + chin.y) / 2;
-          if (centerX < 0.28 || centerX > 0.72 || centerY < 0.22 || centerY > 0.78) {
+          // Center check with responsive mobile/tablet margin tolerance
+          const centerX = (minFaceX + maxFaceX) / 2;
+          const centerY = (minFaceY + maxFaceY) / 2;
+          if (centerX < centerMinX || centerX > centerMaxX || centerY < centerMinY || centerY > centerMaxY) {
             return {
               isValid: false,
               reason: 'uncentered',
@@ -662,7 +715,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const distToLeftCheek = Math.abs(nose.x - leftCheek.x);
           const distToRightCheek = Math.abs(rightCheek.x - nose.x);
           const yawRatio = distToLeftCheek / (distToRightCheek || 0.001);
-          if (yawRatio < 0.45 || yawRatio > 2.2) {
+          if (yawRatio < 0.42 || yawRatio > 2.35) {
             return {
               isValid: false,
               reason: 'rotation',
@@ -674,7 +727,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const dX = rightEye.x - leftEye.x;
           const dY = rightEye.y - leftEye.y;
           const tiltAngle = Math.abs(Math.atan2(dY, dX) * (180 / Math.PI));
-          if (tiltAngle > 22) {
+          if (tiltAngle > 24 && tiltAngle < 156) {
             return {
               isValid: false,
               reason: 'tilt',
@@ -693,7 +746,6 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       if (detectorRef.current) {
         const faces = await detectorRef.current.detect(video);
         if (Array.isArray(faces)) {
-          // Multi-Face Protection
           if (faces.length > 1) {
             return {
               isValid: false,
@@ -712,13 +764,19 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const face = faces[0];
           const bb = face.boundingBox;
           if (bb) {
-            const faceCenterX = (bb.left + bb.width / 2) / vw;
-            const faceCenterY = (bb.top + bb.height / 2) / vh;
-            const faceWidthRatio = bb.width / vw;
-            const faceHeightRatio = bb.height / vh;
+            const topLeft = normalizeToViewport(bb.left / vw, bb.top / vh);
+            const bottomRight = normalizeToViewport((bb.left + bb.width) / vw, (bb.top + bb.height) / vh);
+            const normLeft = Math.min(topLeft.x, bottomRight.x);
+            const normRight = Math.max(topLeft.x, bottomRight.x);
+            const normTop = Math.min(topLeft.y, bottomRight.y);
+            const normBottom = Math.max(topLeft.y, bottomRight.y);
 
-            // Reject edge clipping
-            if (bb.left <= vw * 0.02 || (bb.left + bb.width) >= vw * 0.98 || bb.top <= vh * 0.02 || (bb.top + bb.height) >= vh * 0.98) {
+            const faceCenterX = (normLeft + normRight) / 2;
+            const faceCenterY = (normTop + normBottom) / 2;
+            const faceWidthRatio = normRight - normLeft;
+
+            // Edge clipping check with responsive tolerance
+            if (normLeft < edgeMin || normRight > edgeMax || normTop < edgeMin || normBottom > edgeMax) {
               return {
                 isValid: false,
                 reason: 'partial',
@@ -726,8 +784,8 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               };
             }
 
-            // Relaxed Center bounds (22% tolerance)
-            if (faceCenterX < 0.28 || faceCenterX > 0.72 || faceCenterY < 0.22 || faceCenterY > 0.78) {
+            // Center bounds with responsive tolerance
+            if (faceCenterX < centerMinX || faceCenterX > centerMaxX || faceCenterY < centerMinY || faceCenterY > centerMaxY) {
               return {
                 isValid: false,
                 reason: 'uncentered',
@@ -735,9 +793,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               };
             }
 
-            // Reject unnatural non-face aspect ratios (inanimate objects often have extreme proportions)
+            // Reject unnatural non-face aspect ratios with relaxed mobile close-up tolerance
             const aspectRatio = bb.width / (bb.height || 1);
-            if (aspectRatio < 0.60 || aspectRatio > 1.35 || faceWidthRatio < 0.18 || faceWidthRatio > 0.85) {
+            const minWidthRatio = isMobileOrTablet ? 0.14 : 0.18;
+            const maxWidthRatio = isMobileOrTablet ? 0.98 : 0.85;
+            if (aspectRatio < 0.52 || aspectRatio > 1.45 || faceWidthRatio < minWidthRatio || faceWidthRatio > maxWidthRatio) {
               return {
                 isValid: false,
                 reason: 'object',
@@ -749,10 +809,12 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
             if (Array.isArray(face.landmarks) && face.landmarks.length >= 2) {
               const eyeLandmarks = face.landmarks.filter((l: any) => l.type === 'eye');
               if (eyeLandmarks.length >= 2) {
-                const e1 = eyeLandmarks[0].location || eyeLandmarks[0];
-                const e2 = eyeLandmarks[1].location || eyeLandmarks[1];
+                const e1Raw = eyeLandmarks[0].location || eyeLandmarks[0];
+                const e2Raw = eyeLandmarks[1].location || eyeLandmarks[1];
+                const e1 = normalizeToViewport(e1Raw.x / vw, e1Raw.y / vh);
+                const e2 = normalizeToViewport(e2Raw.x / vw, e2Raw.y / vh);
                 const dy = Math.abs(e2.y - e1.y);
-                const dx = Math.abs(e2.x - e1.x) || 1;
+                const dx = Math.abs(e2.x - e1.x) || 0.001;
                 const tiltDeg = Math.atan2(dy, dx) * (180 / Math.PI);
                 if (tiltDeg > 24) {
                   return {
@@ -783,7 +845,20 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return { isValid: true };
 
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Crop source video region to match CSS object-fit: cover visible viewport 1:1
+      const sWidth = rw / coverScale;
+      const sHeight = rh / coverScale;
+      const sx = Math.max(0, (vw - sWidth) / 2);
+      const sy = Math.max(0, (vh - sHeight) / 2);
+
+      ctx.save();
+      if (isMirrored) {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
       const cw = canvas.width;
       const ch = canvas.height;
@@ -803,7 +878,16 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         return 0.299 * imgData[idx] + 0.587 * imgData[idx + 1] + 0.114 * imgData[idx + 2];
       };
 
-      // Measure relaxed center zone and multi-zone luminance gradients
+      // Responsive margin relaxation (15-20% wider on mobile/tablet < 1024px)
+      const zoneMinX = isMobileOrTablet ? 0.12 : 0.22;
+      const zoneMaxX = isMobileOrTablet ? 0.88 : 0.78;
+      const zoneMinY = isMobileOrTablet ? 0.10 : 0.18;
+      const zoneMaxY = isMobileOrTablet ? 0.90 : 0.82;
+      const borderMarginX = isMobileOrTablet ? 0.03 : 0.06;
+      const borderMarginY = isMobileOrTablet ? 0.025 : 0.05;
+      const maxBorderSkin = isMobileOrTablet ? 0.58 : 0.38;
+      const minZoneSkin = isMobileOrTablet ? 0.035 : 0.06;
+
       let centerSkinCount = 0;
       let centerTotal = 0;
       let upperFaceSkin = 0;
@@ -816,7 +900,6 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       let borderSkinCount = 0;
       let borderTotal = 0;
 
-      // 3D Depth Contour: Natural faces have high luminance gradient between nose bridge and eye sockets / cheeks
       let noseCenterLum = 0;
       let noseLumCount = 0;
       let cheekLum = 0;
@@ -827,30 +910,25 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           const isSkin = isSkinPixel(x, y);
           const lum = getLuminance(x, y);
 
-          // Border check: detects severe crop/overflow at extreme edges (< 6% or > 94%)
-          if (x < cw * 0.06 || x > cw * 0.94 || y < ch * 0.05 || y > ch * 0.95) {
+          if (x < cw * borderMarginX || x > cw * (1 - borderMarginX) || y < ch * borderMarginY || y > ch * (1 - borderMarginY)) {
             borderTotal++;
             if (isSkin) borderSkinCount++;
           }
 
-          // Relaxed Center Oval Zone (22% to 78% width, 18% to 82% height)
-          if (x >= cw * 0.22 && x <= cw * 0.78 && y >= ch * 0.18 && y <= ch * 0.82) {
+          if (x >= cw * zoneMinX && x <= cw * zoneMaxX && y >= ch * zoneMinY && y <= ch * zoneMaxY) {
             centerTotal++;
             if (isSkin) centerSkinCount++;
 
-            // Upper face (forehead/eyes zone)
-            if (y >= ch * 0.22 && y <= ch * 0.48) {
+            if (y >= ch * 0.18 && y <= ch * 0.48) {
               upperTotal++;
               if (isSkin) upperFaceSkin++;
             }
 
-            // Lower face (mouth/chin zone)
-            if (y >= ch * 0.52 && y <= ch * 0.80) {
+            if (y >= ch * 0.52 && y <= ch * 0.84) {
               lowerTotal++;
               if (isSkin) lowerFaceSkin++;
             }
 
-            // Bilateral symmetry test for head turn
             if (x < cw * 0.50) {
               if (isSkin) leftHalfSkin++;
               halfTotal++;
@@ -858,7 +936,6 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
               if (isSkin) rightHalfSkin++;
             }
 
-            // Sample Nose area (42%-58% X, 40%-56% Y) vs Cheek area
             if (x >= cw * 0.44 && x <= cw * 0.56 && y >= ch * 0.42 && y <= ch * 0.56) {
               noseCenterLum += lum;
               noseLumCount++;
@@ -875,9 +952,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       const lowerSkinRatio = lowerTotal > 0 ? lowerFaceSkin / lowerTotal : 0;
       const borderSkinRatio = borderTotal > 0 ? borderSkinCount / borderTotal : 0;
 
-      // 1. Inanimate Object & Non-Human Rejection:
-      // Minimum human skin threshold inside relaxed center oval
-      if (centerSkinRatio < 0.10) {
+      if (centerSkinRatio < 0.08) {
         return {
           isValid: false,
           reason: 'object',
@@ -885,8 +960,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         };
       }
 
-      // 2. Full Face Requirement: Both upper (forehead) and lower (chin) zones must have skin
-      if (upperSkinRatio < 0.06 || lowerSkinRatio < 0.06) {
+      if (upperSkinRatio < minZoneSkin || lowerSkinRatio < minZoneSkin) {
         return {
           isValid: false,
           reason: 'partial',
@@ -894,13 +968,10 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         };
       }
 
-      // 3. Flat Surface / Photo / Screen Spoofing Check (3D Contour Variance):
-      // A flat 2D printout or phone screen exhibits uniform surface reflectance, whereas a real 3D face has natural depth contours
       if (noseLumCount > 0 && cheekLumCount > 0) {
         const avgNoseLum = noseCenterLum / noseLumCount;
         const avgCheekLum = cheekLum / cheekLumCount;
         const depthContourDiff = Math.abs(avgNoseLum - avgCheekLum);
-        // If the surface is unnaturally flat with virtually zero gradient (< 1.2 on 0-255 scale)
         if (depthContourDiff < 1.2 && centerSkinRatio > 0.40) {
           return {
             isValid: false,
@@ -910,11 +981,10 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         }
       }
 
-      // 4. Head Rotation & Tilt: High asymmetry between left and right halves indicates turned head
       const leftRatio = halfTotal > 0 ? leftHalfSkin / halfTotal : 0;
       const rightRatio = halfTotal > 0 ? rightHalfSkin / halfTotal : 0;
       const asymmetryDiff = Math.abs(leftRatio - rightRatio);
-      if (asymmetryDiff > 0.58) {
+      if (asymmetryDiff > (isMobileOrTablet ? 0.65 : 0.58)) {
         return {
           isValid: false,
           reason: 'rotation',
@@ -922,8 +992,7 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
         };
       }
 
-      // 5. Extreme edge crop check
-      if (borderSkinRatio > 0.38) {
+      if (borderSkinRatio > maxBorderSkin) {
         return {
           isValid: false,
           reason: 'partial',
@@ -1447,16 +1516,23 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           {step === 'scanning' && (
             <div className="space-y-4">
               {/* Camera Frame Viewport */}
-              <div className="relative w-full aspect-4/3 sm:aspect-16/10 bg-slate-950 rounded-2xl overflow-hidden border border-purple-500/40 shadow-inner flex items-center justify-center">
+              <div className="relative w-full aspect-3/4 sm:aspect-4/3 md:aspect-16/10 bg-slate-950 rounded-2xl overflow-hidden border border-purple-500/40 shadow-inner flex items-center justify-center">
                 {/* Live Camera Video */}
                 <video
                   ref={videoRef}
                   autoPlay
                   playsInline
                   muted
+                  style={{ transform: cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none' }}
                   className={`absolute inset-0 w-full h-full object-cover ${
-                    cameraFacingMode === 'user' ? 'transform -scale-x-100' : ''
-                  } ${cameraActive ? 'opacity-100' : 'opacity-0'}`}
+                    cameraActive ? 'opacity-100' : 'opacity-0'
+                  }`}
+                />
+                {/* Synchronized 1:1 Canvas Overlay (identical sizing, object-fit: cover & mirroring) */}
+                <canvas
+                  ref={overlayCanvasRef}
+                  style={{ transform: cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none' }}
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
                 />
 
                 {/* Simulated Face Model Fallback if camera is denied or loading */}

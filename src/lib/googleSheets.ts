@@ -96,14 +96,69 @@ export async function logTeamsActivityToGoogleSheets(activity: {
 }
 
 /**
- * Verify Employee Credentials directly against Google Sheets (Optional verification)
+ * Verify Employee Credentials & retrieve role directly from Google Sheets
  */
 export async function verifyEmployeeInGoogleSheets(credentials: {
   username: string;
   password?: string;
-}) {
+}): Promise<ApiResponse<{ role?: string; fullName?: string; department?: string; status?: string }>> {
   return postToGoogleSheets({
     action: 'verify_employee',
     ...credentials
   });
 }
+
+/**
+ * Submit DAR Record (Data Acquisition & Research) to Google Sheets
+ */
+export async function submitDarRecordToGoogleSheets(record: {
+  slNo: number;
+  organisationName: string;
+  designation: string;
+  personName: string;
+  contactNumber: string;
+  city: string;
+  state: string;
+  pincode: string;
+  numberOfCenters: string;
+  location: string;
+  address: string;
+  remarks: string;
+  status: string;
+  rejectionReason?: string;
+  timestamp: string;
+  department: string;
+  submittedBy: string;
+}) {
+  return postToGoogleSheets({
+    action: 'submit_dar_record',
+    ...record
+  });
+}
+
+/**
+ * Fetch DAR Records (filtered by username for DAR team member, or all for admin)
+ */
+export async function fetchDarRecordsFromGoogleSheets(username?: string): Promise<ApiResponse<any[]>> {
+  return postToGoogleSheets({
+    action: 'get_dar_records',
+    username: username || ''
+  });
+}
+
+/**
+ * Update DAR Record Status (e.g., from Recall/Pending to Accepted)
+ */
+export async function updateDarRecordStatusInGoogleSheets(payload: {
+  slNo: number;
+  status: string;
+  rejectionReason?: string;
+  remarks?: string;
+  updatedBy: string;
+}): Promise<ApiResponse> {
+  return postToGoogleSheets({
+    action: 'update_dar_status',
+    ...payload
+  });
+}
+
