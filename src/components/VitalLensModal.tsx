@@ -495,7 +495,52 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
     }, 250);
   };
 
-  // Start Camera with dynamic facing mode
+  // Sync overlay canvas dimensions to exact rendered video size
+  const syncOverlayCanvasSize = () => {
+    const video = videoRef.current;
+    const oc = overlayCanvasRef.current;
+    if (!video || !oc) return;
+    const rect = video.getBoundingClientRect();
+    const targetW = Math.round(rect.width);
+    const targetH = Math.round(rect.height);
+    if (targetW > 0 && targetH > 0 && (oc.width !== targetW || oc.height !== targetH)) {
+      oc.width = targetW;
+      oc.height = targetH;
+    }
+  };
+
+  // Helper to safely attach stream and invoke explicit .play() for iOS Safari & Android Chrome
+  const attachAndPlayStream = async (video: HTMLVideoElement, stream: MediaStream) => {
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+    video.setAttribute('autoplay', 'true');
+    video.muted = true;
+    video.srcObject = stream;
+
+    await new Promise<void>((resolve) => {
+      if (video.readyState >= 1) {
+        resolve();
+        return;
+      }
+      const onMeta = () => {
+        video.removeEventListener('loadedmetadata', onMeta);
+        resolve();
+      };
+      video.addEventListener('loadedmetadata', onMeta);
+      setTimeout(resolve, 600);
+    });
+
+    try {
+      await video.play();
+    } catch {
+      // Retry muted play if browser autoplay policy requires it
+      video.muted = true;
+      await video.play().catch(() => {});
+    }
+    syncOverlayCanvasSize();
+  };
+
+  // Start Camera with mobile-optimized 640x480 resolution & explicit .play() handling
   const startCamera = async (facing: 'user' | 'environment' = cameraFacingMode) => {
     try {
       setCameraError(null);
@@ -504,14 +549,14 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
           video: {
             facingMode: { ideal: facing },
             width: { ideal: 640 },
-            height: { ideal: 480 }
+            height: { ideal: 480 },
+            frameRate: { ideal: 30, max: 30 }
           },
           audio: false
         });
         streamRef.current = stream;
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
+          await attachAndPlayStream(videoRef.current, stream);
         }
         setCameraActive(true);
       } else {
@@ -522,6 +567,20 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       setCameraActive(false);
     }
   };
+
+  // Ensure stream attaches after video mounts & keep canvas overlay sized 1:1 with rendered video
+  useEffect(() => {
+    if (!isOpen || step !== 'scanning') return;
+    const video = videoRef.current;
+    if (video && streamRef.current && video.srcObject !== streamRef.current) {
+      attachAndPlayStream(video, streamRef.current);
+    }
+    syncOverlayCanvasSize();
+    window.addEventListener('resize', syncOverlayCanvasSize);
+    return () => {
+      window.removeEventListener('resize', syncOverlayCanvasSize);
+    };
+  }, [isOpen, step, cameraActive]);
 
   // Begin Scanning sequence
   const startScan = async () => {
@@ -585,14 +644,8 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
       };
     };
 
-    // Sync overlay canvas dimensions & draw subtle alignment feedback
-    if (overlayCanvasRef.current) {
-      const oc = overlayCanvasRef.current;
-      if (oc.width !== vw || oc.height !== vh) {
-        oc.width = vw;
-        oc.height = vh;
-      }
-    }
+    // Sync overlay canvas dimensions to exact rendered video dimensions
+    syncOverlayCanvasSize();
 
     // Margin thresholds relaxed by ~15-20% on mobile/tablet screens
     const edgeMin = isMobileOrTablet ? -0.14 : 0.02;
@@ -1528,11 +1581,11 @@ export const VitalLensModal: React.FC<VitalLensModalProps> = ({
                     cameraActive ? 'opacity-100' : 'opacity-0'
                   }`}
                 />
-                {/* Synchronized 1:1 Canvas Overlay (identical sizing, object-fit: cover & mirroring) */}
+                {/* Synchronized 1:1 Canvas Overlay (exact rendered dimensions & mirroring) */}
                 <canvas
                   ref={overlayCanvasRef}
                   style={{ transform: cameraFacingMode === 'user' ? 'scaleX(-1)' : 'none' }}
-                  className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                  className="absolute inset-0 w-full h-full pointer-events-none"
                 />
 
                 {/* Simulated Face Model Fallback if camera is denied or loading */}
